@@ -16,11 +16,12 @@ interface HealthChecks {
   sqlite: boolean;
   chromadb: boolean;
   github: boolean;
-  anthropic: boolean;
+  chatModel: boolean;
 }
 
 interface HealthDetails {
-  ollama: { model?: string; error?: string };
+  ollama: { embeddingModel?: string; error?: string };
+  chatModel: { model?: string; error?: string };
   sqlite: { path?: string; error?: string };
   chromadb: { error?: string };
   github: { repo?: string; error?: string };
@@ -149,8 +150,8 @@ export default function HomePage() {
                       ok={health.checks.ollama}
                       label={
                         health.checks.ollama
-                          ? `Ollama (${health.details.ollama.model})`
-                          : "Ollama"
+                          ? `Ollama Embeddings (${health.details.ollama.embeddingModel})`
+                          : "Ollama Embeddings"
                       }
                     />
                     {health.details.ollama.error && (
@@ -200,10 +201,21 @@ export default function HomePage() {
                     )}
                   </div>
 
-                  <StatusBadge
-                    ok={health.checks.anthropic}
-                    label="Anthropic API Key"
-                  />
+                  <div>
+                    <StatusBadge
+                      ok={health.checks.chatModel}
+                      label={
+                        health.checks.chatModel
+                          ? `Chat Model (${health.details.chatModel?.model ?? "llama3.2:3b"})`
+                          : "Chat Model (Llama)"
+                      }
+                    />
+                    {health.details.chatModel?.error && (
+                      <p className="text-xs text-muted-foreground ml-5 mt-1">
+                        {health.details.chatModel.error}
+                      </p>
+                    )}
+                  </div>
                 </div>
 
                 {/* Index Stats */}

@@ -42,6 +42,15 @@ else
   ollama pull nomic-embed-text
 fi
 
+# Verify llama3.2:3b is available for chat
+OLLAMA_CHAT_MODEL="${OLLAMA_CHAT_MODEL:-llama3.2:3b}"
+if curl -sf http://localhost:11434/api/tags | grep -q "llama3.2"; then
+  echo "[start] $OLLAMA_CHAT_MODEL model is loaded."
+else
+  echo "[start] Pulling $OLLAMA_CHAT_MODEL model..."
+  ollama pull "$OLLAMA_CHAT_MODEL"
+fi
+
 # Wait for ChromaDB to be ready
 echo "[start] Waiting for ChromaDB to be ready..."
 for i in $(seq 1 30); do

@@ -1,12 +1,11 @@
 import { NextRequest } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
 import { getEmbeddingProvider } from "@/lib/embeddings";
 import { querySimilarChunks } from "@/lib/storage/vectorstore";
 
 /**
  * POST /api/ask — RAG question answering endpoint.
- * Embeds the question, retrieves similar chunks, sends to Claude Sonnet with
- * source citation instructions, and streams the response back.
+ * Embeds the question, retrieves similar chunks, sends to Llama via Ollama
+ * with source citation instructions, and streams the response back.
  */
 
 const SYSTEM_PROMPT = `You are Recall, a project intelligence assistant. You answer questions about a project's document corpus using the provided context chunks.
@@ -61,24 +60,34 @@ ${chunk.content}`
 
     const contextText = contextBlocks.join("\n\n");
 
-    // Step 4: Stream from Claude Sonnet
-    const apiKey = (process.env.ANTHROPIC_API_KEY ?? "").trim();
-    const anthropic = new Anthropic({ apiKey });
+    // Step 4: Stream from Ollama (Llama)
+    const ollamaBase = (process.env.OLLAMA_BASE_URL ?? "http://localhost:11434").replace(/\/$/, "");
+    const chatModel = process.env.OLLAMA_CHAT_MODEL ?? "llama3.2:3b";
 
-    const stream = anthropic.messages.stream({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 2048,
-      system: SYSTEM_PROMPT,
-      messages: [
-        {
-          role: "user",
-          content: `Context from indexed project documents:\n\n${contextText}\n\n---\n\nQuestion: ${question}`,
-        },
-      ],
+    const ollamaResponse = await fetch(`${ollamaBase}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: chatModel,
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          {
+            role: "user",
+            content: `Context from indexed project documents:\n\n${contextText}\n\n---\n\nQuestion: ${question}`,
+          },
+        ],
+        stream: true,
+      }),
     });
+
+    if (!ollamaResponse.ok) {
+      const errText = await ollamaResponse.text();
+      throw new Error(`Ollama chat error (${ollamaResponse.status}): ${errText}`);
+    }
 
     // Create a ReadableStream to pipe the response
     const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
     const readable = new ReadableStream({
       async start(controller) {
         try {
@@ -96,17 +105,52 @@ ${chunk.content}`
             )
           );
 
-          // Stream text tokens
-          for await (const event of stream) {
-            if (
-              event.type === "content_block_delta" &&
-              event.delta.type === "text_delta"
-            ) {
-              controller.enqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({ type: "text", text: event.delta.text })}\n\n`
-                )
-              );
+          // Stream text tokens from Ollama's NDJSON response
+          const reader = ollamaResponse.body?.getReader();
+          if (!reader) throw new Error("No response body from Ollama");
+
+          let buffer = "";
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() ?? "";
+
+            for (const line of lines) {
+              if (!line.trim()) continue;
+              try {
+                const parsed = JSON.parse(line);
+                if (parsed.message?.content) {
+                  controller.enqueue(
+                    encoder.encode(
+                      `data: ${JSON.stringify({ type: "text", text: parsed.message.content })}\n\n`
+                    )
+                  );
+                }
+                if (parsed.done) {
+                  // Ollama signals completion
+                }
+              } catch {
+                // Skip malformed JSON lines
+              }
+            }
+          }
+
+          // Process any remaining buffer
+          if (buffer.trim()) {
+            try {
+              const parsed = JSON.parse(buffer);
+              if (parsed.message?.content) {
+                controller.enqueue(
+                  encoder.encode(
+                    `data: ${JSON.stringify({ type: "text", text: parsed.message.content })}\n\n`
+                  )
+                );
+              }
+            } catch {
+              // Skip
             }
           }
 

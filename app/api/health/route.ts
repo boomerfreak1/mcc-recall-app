@@ -78,8 +78,24 @@ export async function GET() {
     githubError = "GITHUB_TOKEN or GITHUB_REPO not configured";
   }
 
-  // 6. Anthropic API key is configured
-  const anthropic = !!process.env.ANTHROPIC_API_KEY;
+  // 6. Ollama chat model (Llama) is available
+  let chatModel = false;
+  let chatModelName = process.env.OLLAMA_CHAT_MODEL ?? "llama3.2:3b";
+  let chatModelError = "";
+  try {
+    const ollamaBase = (process.env.OLLAMA_BASE_URL ?? "http://localhost:11434").replace(/\/$/, "");
+    const tagsRes = await fetch(`${ollamaBase}/api/tags`);
+    if (tagsRes.ok) {
+      const tagsData = await tagsRes.json();
+      const models = (tagsData.models ?? []) as Array<{ name: string }>;
+      chatModel = models.some((m) => m.name.startsWith(chatModelName.split(":")[0]));
+      if (!chatModel) chatModelError = `${chatModelName} not found in Ollama`;
+    } else {
+      chatModelError = `Ollama tags API returned ${tagsRes.status}`;
+    }
+  } catch (error) {
+    chatModelError = error instanceof Error ? error.message : String(error);
+  }
 
   // Index stats
   let indexStats = { documents: 0, chunks: 0, totalTokens: 0, vectorCount: 0 };
@@ -96,7 +112,7 @@ export async function GET() {
     // Stats unavailable, keep defaults
   }
 
-  const allHealthy = server && ollama && sqlite && chromadb && github && anthropic;
+  const allHealthy = server && ollama && sqlite && chromadb && github && chatModel;
 
   return NextResponse.json({
     status: allHealthy ? "healthy" : "degraded",
@@ -107,12 +123,16 @@ export async function GET() {
       sqlite,
       chromadb,
       github,
-      anthropic,
+      chatModel,
     },
     details: {
       ollama: {
-        model: ollamaModel,
+        embeddingModel: ollamaModel,
         ...(ollamaError && { error: ollamaError }),
+      },
+      chatModel: {
+        model: chatModelName,
+        ...(chatModelError && { error: chatModelError }),
       },
       sqlite: {
         path: sqlitePath,
