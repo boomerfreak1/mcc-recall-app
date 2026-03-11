@@ -42,8 +42,8 @@ else
   ollama pull nomic-embed-text
 fi
 
-# Verify llama3.2:3b is available for chat
-OLLAMA_CHAT_MODEL="${OLLAMA_CHAT_MODEL:-llama3.2:3b}"
+# Verify llama3.2:1b is available for chat
+OLLAMA_CHAT_MODEL="${OLLAMA_CHAT_MODEL:-llama3.2:1b}"
 if curl -sf http://localhost:11434/api/tags | grep -q "llama3.2"; then
   echo "[start] $OLLAMA_CHAT_MODEL model is loaded."
 else

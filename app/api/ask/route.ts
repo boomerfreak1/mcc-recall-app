@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     const { embedding } = await embedder.generateEmbedding(question);
 
     // Step 2: Query ChromaDB for similar chunks
-    const chunks = await querySimilarChunks(embedding, { nResults: 10 });
+    const chunks = await querySimilarChunks(embedding, { nResults: 5 });
 
     if (chunks.length === 0) {
       return new Response(

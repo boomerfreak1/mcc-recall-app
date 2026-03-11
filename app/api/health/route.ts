@@ -80,7 +80,7 @@ export async function GET() {
 
   // 6. Ollama chat model (Llama) is available
   let chatModel = false;
-  let chatModelName = process.env.OLLAMA_CHAT_MODEL ?? "llama3.2:3b";
+  let chatModelName = process.env.OLLAMA_CHAT_MODEL ?? "llama3.2:1b";
   let chatModelError = "";
   try {
     const ollamaBase = (process.env.OLLAMA_BASE_URL ?? "http://localhost:11434").replace(/\/$/, "");

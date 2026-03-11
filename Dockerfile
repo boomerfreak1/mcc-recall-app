@@ -23,7 +23,7 @@ RUN curl -fsSL https://ollama.com/install.sh | sh
 RUN ollama serve & \
     sleep 5 && \
     ollama pull nomic-embed-text && \
-    ollama pull llama3.2:3b && \
+    ollama pull llama3.2:1b && \
     pkill ollama || true
 
 WORKDIR /app
@@ -52,7 +52,7 @@ ENV DATA_DIR=/data
 ENV OLLAMA_BASE_URL=http://localhost:11434
 ENV CHROMA_HOST=localhost
 ENV CHROMA_PORT=8000
-ENV OLLAMA_CHAT_MODEL=llama3.2:3b
+ENV OLLAMA_CHAT_MODEL=llama3.2:1b
 ENV PORT=3000
 
 CMD ["/app/start.sh"]
