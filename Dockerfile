@@ -29,7 +29,7 @@ WORKDIR /app
 
 # Copy package files and install dependencies
 COPY package.json package-lock.json ./
-RUN npm ci --production=false
+RUN npm cache clean --force && npm ci --production=false
 
 # Copy source code
 COPY . .
