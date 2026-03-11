@@ -13,7 +13,7 @@ echo "[start] Starting ChromaDB on port $CHROMA_PORT..."
   --path "$DATA_DIR/chroma" \
   --host 0.0.0.0 \
   --port "$CHROMA_PORT" \
-  --log-path "$DATA_DIR/chroma.log" &
+  > "$DATA_DIR/chroma.log" 2>&1 &
 CHROMA_PID=$!
 
 # Start Ollama in the background
@@ -51,7 +51,8 @@ for i in $(seq 1 30); do
     break
   fi
   if [ "$i" -eq 30 ]; then
-    echo "[start] WARNING: ChromaDB did not start within 30 seconds."
+    echo "[start] WARNING: ChromaDB did not start within 30 seconds. Check $DATA_DIR/chroma.log"
+    cat "$DATA_DIR/chroma.log" 2>/dev/null || true
   fi
   sleep 1
 done
