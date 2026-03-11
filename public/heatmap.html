@@ -57,27 +57,26 @@
   .page-header {
     background: var(--white);
     color: var(--gray-100);
-    padding: 16px 32px;
-    border-bottom: 1px solid var(--gray-20);
-  }
-  .page-header h1 { font-size: 20px; font-weight: 600; letter-spacing: 0.02em; color: var(--gray-100); }
-  .page-header p { font-size: 13px; color: var(--gray-50); margin-top: 4px; }
-  .page-header .back-link { font-size: 13px; color: var(--ibm-blue); text-decoration: none; margin-bottom: 8px; display: inline-block; }
-  .page-header .back-link:hover { text-decoration: underline; }
-
-  .legend-bar {
-    display: flex;
-    align-items: center;
-    gap: 16px;
     padding: 12px 32px;
-    background: var(--white);
     border-bottom: 1px solid var(--gray-20);
-    font-size: 12px;
-    color: var(--gray-70);
     position: sticky;
-    top: 106px;
+    top: 48px;
     z-index: 99;
   }
+  .page-header .top-row { display: flex; align-items: center; justify-content: space-between; }
+  .page-header .left { display: flex; align-items: center; gap: 16px; }
+  .page-header .back-link { font-size: 13px; color: var(--ibm-blue); text-decoration: none; }
+  .page-header .back-link:hover { text-decoration: underline; }
+  .page-header h1 { font-size: 18px; font-weight: 600; letter-spacing: 0.02em; color: var(--gray-100); }
+  .page-header p { font-size: 12px; color: var(--gray-50); margin-top: 2px; }
+  .legend-inline {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 11px;
+    color: var(--gray-70);
+  }
+  .legend-inline .label { font-weight: 600; color: var(--gray-100); }
   .legend-bar .label { font-weight: 600; color: var(--gray-100); }
   .legend-item {
     display: flex;
@@ -95,7 +94,7 @@
     overflow: auto;
     margin: 0;
     padding: 0 0 40px 0;
-    max-height: calc(100vh - 155px);
+    max-height: calc(100vh - 120px);
   }
 
   table.heatmap {
@@ -458,19 +457,21 @@
 </div>
 
 <div class="page-header">
-  <a href="/" class="back-link">&larr; Home</a>
-  <h1>MCC Workflow Overlap Heatmap</h1>
+  <div class="top-row">
+    <div class="left">
+      <a href="/" class="back-link">&larr; Home</a>
+      <h1>MCC Workflow Overlap Heatmap</h1>
+    </div>
+    <div class="legend-inline">
+      <span class="label">Overlap Score:</span>
+      <div class="legend-item"><div class="legend-swatch" style="background:var(--score-1)"></div> 1 Minimal</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:var(--score-2)"></div> 2 Low</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:var(--score-3)"></div> 3 Moderate</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:var(--score-4)"></div> 4 High</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:var(--score-5)"></div> 5 Very High</div>
+    </div>
+  </div>
   <p>48 workflows &mdash; Click any cell to see the overlap analysis breakdown</p>
-</div>
-
-<div class="legend-bar">
-  <span class="label">Overlap Score:</span>
-  <div class="legend-item"><div class="legend-swatch" style="background:var(--score-1)"></div> 1 Minimal</div>
-  <div class="legend-item"><div class="legend-swatch" style="background:var(--score-2)"></div> 2 Low</div>
-  <div class="legend-item"><div class="legend-swatch" style="background:var(--score-3)"></div> 3 Moderate</div>
-  <div class="legend-item"><div class="legend-swatch" style="background:var(--score-4)"></div> 4 High</div>
-  <div class="legend-item"><div class="legend-swatch" style="background:var(--score-5)"></div> 5 Very High</div>
-  <span style="margin-left:auto;font-size:11px;color:var(--gray-50)">IBM MCC &middot; March 2026</span>
 </div>
 
 <div class="heatmap-container" id="heatmap-container"></div>

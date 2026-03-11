@@ -152,109 +152,109 @@ export default function HomePage() {
             </p>
           </Column>
 
-          {/* System Health */}
+          {/* Left column: System Health + Indexing */}
           <Column lg={10} md={8} sm={4} style={{ marginBottom: "1.5rem" }}>
-            <Tile style={{ height: "100%" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
-                <div>
-                  <h3 style={{ fontSize: "1.25rem", fontWeight: 600, marginBottom: "0.25rem" }}>
-                    System Health
-                  </h3>
-                  <p style={{ fontSize: "0.75rem", color: "var(--cds-text-secondary)" }}>
-                    {health?.timestamp
-                      ? `Last checked: ${new Date(health.timestamp).toLocaleTimeString()}`
-                      : "Checking..."}
-                  </p>
-                </div>
-                {health && (
-                  <Tag
-                    type={health.status === "healthy" ? "green" : "red"}
-                    size="md"
-                  >
-                    {health.status}
-                  </Tag>
-                )}
-              </div>
-
-              {loading && !health && (
-                <InlineLoading description="Checking services..." />
-              )}
-
-              {error && (
-                <p style={{ fontSize: "0.875rem", color: "var(--cds-support-error)" }}>
-                  Error: {error}
-                </p>
-              )}
-
-              {health && (
-                <>
-                  <StatusRow
-                    ok={health.checks.server}
-                    label="Next.js Server"
-                  />
-                  <StatusRow
-                    ok={health.checks.ollama}
-                    label="Ollama Embeddings"
-                    detail={health.details.ollama.embeddingModel || health.details.ollama.error}
-                  />
-                  <StatusRow
-                    ok={health.checks.chatModel}
-                    label="Chat Model (Llama)"
-                    detail={health.details.chatModel?.model || health.details.chatModel?.error}
-                  />
-                  <StatusRow
-                    ok={health.checks.sqlite}
-                    label="SQLite Database"
-                    detail={health.details.sqlite.error}
-                  />
-                  <StatusRow
-                    ok={health.checks.chromadb}
-                    label="ChromaDB"
-                    detail={health.details.chromadb.error}
-                  />
-                  <StatusRow
-                    ok={health.checks.github}
-                    label="GitHub"
-                    detail={health.checks.github ? health.details.github.repo : health.details.github.error}
-                  />
-
-                  {health.index.documents > 0 && (
-                    <div style={{ marginTop: "1rem", padding: "0.75rem", background: "var(--cds-layer-02)", fontSize: "0.75rem", color: "var(--cds-text-secondary)" }}>
-                      <strong>{health.index.documents}</strong> documents &middot;{" "}
-                      <strong>{health.index.chunks}</strong> chunks &middot;{" "}
-                      ~<strong>{Math.round(health.index.totalTokens / 1000)}k</strong> tokens &middot;{" "}
-                      <strong>{health.index.vectorCount}</strong> vectors
-                    </div>
-                  )}
-
-                  <div style={{ marginTop: "1rem", display: "flex", justifyContent: "flex-end" }}>
-                    <Button
-                      kind="ghost"
-                      size="sm"
-                      renderIcon={Renew}
-                      onClick={fetchHealth}
-                      disabled={loading}
-                    >
-                      Refresh
-                    </Button>
-                  </div>
-                </>
-              )}
-            </Tile>
-          </Column>
-
-          {/* Right column: Index + Chat */}
-          <Column lg={6} md={8} sm={4} style={{ marginBottom: "1.5rem" }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem", height: "100%" }}>
-              {/* Indexing */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+              {/* System Health */}
               <Tile>
-                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
-                  <DataBase size={20} />
-                  <h3 style={{ fontSize: "1.25rem", fontWeight: 600 }}>Indexing</h3>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
+                  <div>
+                    <h3 style={{ fontSize: "1.25rem", fontWeight: 600, marginBottom: "0.25rem" }}>
+                      System Health
+                    </h3>
+                    <p style={{ fontSize: "0.75rem", color: "var(--cds-text-secondary)" }}>
+                      {health?.timestamp
+                        ? `Last checked: ${new Date(health.timestamp).toLocaleTimeString()}`
+                        : "Checking..."}
+                    </p>
+                  </div>
+                  {health && (
+                    <Tag
+                      type={health.status === "healthy" ? "green" : "red"}
+                      size="md"
+                    >
+                      {health.status}
+                    </Tag>
+                  )}
                 </div>
-                <p style={{ fontSize: "0.875rem", color: "var(--cds-text-secondary)", marginBottom: "1rem" }}>
-                  Pull documents from GitHub, parse, chunk, and embed them.
-                </p>
+
+                {loading && !health && (
+                  <InlineLoading description="Checking services..." />
+                )}
+
+                {error && (
+                  <p style={{ fontSize: "0.875rem", color: "var(--cds-support-error)" }}>
+                    Error: {error}
+                  </p>
+                )}
+
+                {health && (
+                  <>
+                    <StatusRow
+                      ok={health.checks.server}
+                      label="Next.js Server"
+                    />
+                    <StatusRow
+                      ok={health.checks.ollama}
+                      label="Ollama Embeddings"
+                      detail={health.details.ollama.embeddingModel || health.details.ollama.error}
+                    />
+                    <StatusRow
+                      ok={health.checks.chatModel}
+                      label="Chat Model (Llama)"
+                      detail={health.details.chatModel?.model || health.details.chatModel?.error}
+                    />
+                    <StatusRow
+                      ok={health.checks.sqlite}
+                      label="SQLite Database"
+                      detail={health.details.sqlite.error}
+                    />
+                    <StatusRow
+                      ok={health.checks.chromadb}
+                      label="ChromaDB"
+                      detail={health.details.chromadb.error}
+                    />
+                    <StatusRow
+                      ok={health.checks.github}
+                      label="GitHub"
+                      detail={health.checks.github ? health.details.github.repo : health.details.github.error}
+                    />
+
+                    {health.index.documents > 0 && (
+                      <div style={{ marginTop: "1rem", padding: "0.75rem", background: "var(--cds-layer-02)", fontSize: "0.75rem", color: "var(--cds-text-secondary)" }}>
+                        <strong>{health.index.documents}</strong> documents &middot;{" "}
+                        <strong>{health.index.chunks}</strong> chunks &middot;{" "}
+                        ~<strong>{Math.round(health.index.totalTokens / 1000)}k</strong> tokens &middot;{" "}
+                        <strong>{health.index.vectorCount}</strong> vectors
+                      </div>
+                    )}
+
+                    <div style={{ marginTop: "1rem", display: "flex", justifyContent: "flex-end" }}>
+                      <Button
+                        kind="ghost"
+                        size="sm"
+                        renderIcon={Renew}
+                        onClick={fetchHealth}
+                        disabled={loading}
+                      >
+                        Refresh
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </Tile>
+
+              {/* Indexing — below System Health, same width */}
+              <Tile>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <DataBase size={20} />
+                    <h3 style={{ fontSize: "1.25rem", fontWeight: 600 }}>Indexing</h3>
+                  </div>
+                  <span style={{ fontSize: "0.75rem", color: "var(--cds-text-secondary)" }}>
+                    Pull documents from GitHub, parse, chunk, and embed them.
+                  </span>
+                </div>
 
                 {indexing ? (
                   <InlineLoading description="Indexing... this may take a few minutes" />
@@ -305,33 +305,35 @@ export default function HomePage() {
                   </div>
                 )}
               </Tile>
+            </div>
+          </Column>
 
-              {/* Navigation tiles */}
-              <div style={{ display: "flex", gap: "1rem" }}>
-                <ClickableTile href="/chat" style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", gap: "0.75rem", padding: "1.25rem 0.75rem", minHeight: "120px" }}>
-                  <Chat size={32} />
-                  <span style={{ fontSize: "0.875rem", fontWeight: 600 }}>Chat</span>
-                  <span style={{ fontSize: "0.6875rem", color: "var(--cds-text-secondary)", textAlign: "center" }}>
-                    Ask about your documents
-                  </span>
-                </ClickableTile>
+          {/* Right column: Navigation tiles */}
+          <Column lg={6} md={8} sm={4} style={{ marginBottom: "1.5rem" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <ClickableTile href="/chat" style={{ display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", gap: "0.75rem", padding: "1.25rem 0.75rem", minHeight: "120px" }}>
+                <Chat size={32} />
+                <span style={{ fontSize: "0.875rem", fontWeight: 600 }}>Chat</span>
+                <span style={{ fontSize: "0.6875rem", color: "var(--cds-text-secondary)", textAlign: "center" }}>
+                  Ask about your documents
+                </span>
+              </ClickableTile>
 
-                <ClickableTile href="/blueprints.html" style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", gap: "0.75rem", padding: "1.25rem 0.75rem", minHeight: "120px" }}>
-                  <Catalog size={32} />
-                  <span style={{ fontSize: "0.875rem", fontWeight: 600 }}>Blueprints</span>
-                  <span style={{ fontSize: "0.6875rem", color: "var(--cds-text-secondary)", textAlign: "center" }}>
-                    Workflow blueprints
-                  </span>
-                </ClickableTile>
+              <ClickableTile href="/blueprints.html" style={{ display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", gap: "0.75rem", padding: "1.25rem 0.75rem", minHeight: "120px" }}>
+                <Catalog size={32} />
+                <span style={{ fontSize: "0.875rem", fontWeight: 600 }}>Blueprints</span>
+                <span style={{ fontSize: "0.6875rem", color: "var(--cds-text-secondary)", textAlign: "center" }}>
+                  Workflow blueprints
+                </span>
+              </ClickableTile>
 
-                <ClickableTile href="/heatmap.html" style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", gap: "0.75rem", padding: "1.25rem 0.75rem", minHeight: "120px" }}>
-                  <HeatMap size={32} />
-                  <span style={{ fontSize: "0.875rem", fontWeight: 600 }}>Heatmap</span>
-                  <span style={{ fontSize: "0.6875rem", color: "var(--cds-text-secondary)", textAlign: "center" }}>
-                    Workflow overlap analysis
-                  </span>
-                </ClickableTile>
-              </div>
+              <ClickableTile href="/heatmap.html" style={{ display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", gap: "0.75rem", padding: "1.25rem 0.75rem", minHeight: "120px" }}>
+                <HeatMap size={32} />
+                <span style={{ fontSize: "0.875rem", fontWeight: 600 }}>Heatmap</span>
+                <span style={{ fontSize: "0.6875rem", color: "var(--cds-text-secondary)", textAlign: "center" }}>
+                  Workflow overlap analysis
+                </span>
+              </ClickableTile>
             </div>
           </Column>
         </Grid>
