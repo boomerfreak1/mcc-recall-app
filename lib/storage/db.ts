@@ -7,7 +7,7 @@ import fs from "fs";
  * Stores documents and chunks metadata.
  */
 
-const DEFAULT_DATA_DIR = "./data";
+const DEFAULT_DATA_DIR = process.env.NODE_ENV === "production" ? "/data" : "./data";
 
 let _db: Database.Database | null = null;
 
@@ -252,4 +252,30 @@ export function getStats(): {
 export function clearAll(): void {
   const db = getDb();
   db.exec("DELETE FROM chunks; DELETE FROM documents;");
+}
+
+/**
+ * Health check for SQLite connection.
+ */
+export function dbHealthCheck(): {
+  available: boolean;
+  path: string;
+  error?: string;
+} {
+  try {
+    const db = getDb();
+    db.prepare("SELECT 1").get();
+    const dataDir = process.env.DATA_DIR ?? DEFAULT_DATA_DIR;
+    return {
+      available: true,
+      path: path.join(dataDir, "recall.db"),
+    };
+  } catch (error) {
+    const dataDir = process.env.DATA_DIR ?? DEFAULT_DATA_DIR;
+    return {
+      available: false,
+      path: path.join(dataDir, "recall.db"),
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }

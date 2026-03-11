@@ -11,7 +11,57 @@ Recall indexes a project's document corpus, extracts structured knowledge (decis
 - **Anthropic Claude** — entity extraction (Haiku) and answer generation (Sonnet)
 - **GitHub** — document repository with webhook-triggered indexing
 
-## Local Setup
+## Railway Deployment
+
+### 1. Create a new Railway project
+
+1. Go to [railway.app](https://railway.app) and create a new project
+2. Select "Deploy from GitHub repo" and connect `boomerfreak1/mcc-recall-app`
+3. Railway will detect the Dockerfile and build automatically
+
+### 2. Add a persistent volume
+
+1. In your Railway service, go to **Settings → Volumes**
+2. Click **Add Volume**
+3. Mount path: `/data`
+4. This stores the SQLite database and ChromaDB data across deploys
+
+### 3. Set environment variables
+
+In **Settings → Variables**, add:
+
+| Variable | Value |
+|----------|-------|
+| `GITHUB_TOKEN` | Your GitHub personal access token (repo scope) |
+| `GITHUB_REPO` | `boomerfreak1/mcc-recall-app` |
+| `GITHUB_WEBHOOK_SECRET` | A random string for webhook verification |
+| `ANTHROPIC_API_KEY` | Your Anthropic API key |
+| `DATA_DIR` | `/data` |
+| `PORT` | `3000` |
+
+The following have defaults and don't need to be set unless you're customizing:
+- `EMBEDDING_PROVIDER` (default: `ollama`)
+- `OLLAMA_BASE_URL` (default: `http://localhost:11434`)
+- `CHROMA_HOST` (default: `localhost`)
+- `CHROMA_PORT` (default: `8000`)
+
+### 4. Deploy
+
+Railway will build the Docker image (installs Ollama + nomic-embed-text model + ChromaDB), then start all services via the `start.sh` script.
+
+### 5. Set up the GitHub webhook
+
+1. Go to your GitHub repo → **Settings → Webhooks → Add webhook**
+2. Payload URL: `https://<your-railway-domain>/api/webhooks/github`
+3. Content type: `application/json`
+4. Secret: Same value as `GITHUB_WEBHOOK_SECRET` in Railway
+5. Events: Select **"Just the push event"**
+
+### 6. Initial index
+
+After deploy, open your Railway app URL and click **"Index Now"** to run the first full index. Subsequent pushes to the repo will trigger incremental re-indexing automatically via the webhook.
+
+## Local Development
 
 ### Prerequisites
 
@@ -25,7 +75,7 @@ Recall indexes a project's document corpus, extracts structured knowledge (decis
 # Install Ollama (macOS)
 brew install ollama
 
-# Start Ollama
+# Start Ollama (in a separate terminal)
 ollama serve
 
 # Pull the embedding model (~300MB)
@@ -38,11 +88,9 @@ ollama pull nomic-embed-text
 # Install via pip
 pip install chromadb
 
-# Start ChromaDB server with persistent storage
+# Start ChromaDB server (in a separate terminal)
 chroma run --path ./data/chroma
 ```
-
-ChromaDB will run on `http://localhost:8000` by default.
 
 ### 3. Clone and install
 
@@ -58,16 +106,7 @@ npm install
 cp .env.example .env
 ```
 
-Edit `.env` with your values:
-
-- `GITHUB_TOKEN` — GitHub personal access token with repo read access
-- `GITHUB_REPO` — Target repo in `owner/repo` format
-- `ANTHROPIC_API_KEY` — Your Anthropic API key
-- `EMBEDDING_PROVIDER` — `ollama` (default)
-- `OLLAMA_BASE_URL` — `http://localhost:11434` (default)
-- `CHROMA_HOST` — `localhost` (default)
-- `CHROMA_PORT` — `8000` (default)
-- `DATA_DIR` — `./data` (default, for SQLite database)
+Edit `.env` with your values (see Railway variables table above). For local dev, set `DATA_DIR=./data`.
 
 ### 5. Run the dev server
 
@@ -75,18 +114,7 @@ Edit `.env` with your values:
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to see the health check dashboard.
-
-### 6. Index your documents
-
-Click the **"Index Now"** button on the home page. This will:
-1. Pull all supported files from the configured GitHub repo
-2. Parse them (.docx, .xlsx, .csv, .md, .pdf)
-3. Chunk them along natural boundaries (headings, sheets, pages)
-4. Generate embeddings via Ollama
-5. Store in SQLite (structured data) and ChromaDB (vectors)
-
-Then navigate to `/chat` to ask questions about your documents.
+Open [http://localhost:3000](http://localhost:3000) to see the health check dashboard. Click **"Index Now"** to index your documents, then navigate to `/chat` to ask questions.
 
 ## Project Structure
 
@@ -94,9 +122,9 @@ Then navigate to `/chat` to ask questions about your documents.
 app/                    # Next.js App Router routes
   api/
     ask/                # POST /api/ask — RAG question answering (streamed)
-    health/             # GET /api/health — service health checks
+    health/             # GET /api/health — service health checks (JSON booleans)
     index/              # POST /api/index — trigger full indexing pipeline
-    webhooks/github/    # POST /api/webhooks/github — push event handler
+    webhooks/github/    # POST /api/webhooks/github — verified push event handler
   chat/                 # Chat UI for Q&A
 components/ui/          # shadcn/ui components (button, card, input, dialog)
 lib/
@@ -107,6 +135,8 @@ lib/
   storage/              # SQLite (db.ts) + ChromaDB (vectorstore.ts)
   ai/                   # Anthropic API wrappers (TODO)
 scripts/                # Test and utility scripts
+Dockerfile              # Single-container build (Node.js + Ollama + ChromaDB)
+start.sh                # Startup script: launches Ollama, ChromaDB, then Next.js
 ```
 
 ## Supported Document Formats
@@ -119,12 +149,27 @@ scripts/                # Test and utility scripts
 | .md    | Regex | ATX headings (# - ######) |
 | .pdf   | pdf-parse | Pages, heuristic headings |
 
-## GitHub Webhook Setup
+## Health Check
 
-To enable automatic re-indexing when documents are pushed:
+`GET /api/health` returns:
 
-1. Go to your repo → Settings → Webhooks → Add webhook
-2. Payload URL: `https://your-domain/api/webhooks/github`
-3. Content type: `application/json`
-4. Secret: Set the same value as `GITHUB_WEBHOOK_SECRET` in your `.env`
-5. Events: Select "Just the push event"
+```json
+{
+  "status": "healthy",
+  "checks": {
+    "server": true,
+    "ollama": true,
+    "sqlite": true,
+    "chromadb": true,
+    "github": true,
+    "anthropic": true
+  },
+  "details": { ... },
+  "index": {
+    "documents": 25,
+    "chunks": 600,
+    "totalTokens": 150000,
+    "vectorCount": 600
+  }
+}
+```

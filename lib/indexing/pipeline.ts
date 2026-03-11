@@ -1,3 +1,4 @@
+import fs from "fs";
 import { GitHubClient, getGitHubClient } from "../github";
 import { parseDocument, isSupported } from "../parsers";
 import { chunkDocument, Chunk } from "./chunker";
@@ -7,6 +8,7 @@ import {
   insertChunks,
   deleteChunksByDocumentId,
   getDocumentByPath,
+  getStats,
   clearAll,
   addChunks as addVectorChunks,
   deleteDocumentChunks,
@@ -16,6 +18,29 @@ import {
 /**
  * Full indexing pipeline: GitHub -> Parse -> Chunk -> Embed -> Store.
  */
+
+const DEFAULT_DATA_DIR = process.env.NODE_ENV === "production" ? "/data" : "./data";
+
+/**
+ * Ensure the data directory exists (handles fresh persistent volumes on first deploy).
+ */
+function ensureDataDir(): void {
+  const dataDir = process.env.DATA_DIR ?? DEFAULT_DATA_DIR;
+  fs.mkdirSync(dataDir, { recursive: true });
+  fs.mkdirSync(`${dataDir}/chroma`, { recursive: true });
+}
+
+/**
+ * Check if the index is empty (first deploy / fresh volume).
+ */
+export function isIndexEmpty(): boolean {
+  try {
+    const stats = getStats();
+    return stats.documentCount === 0;
+  } catch {
+    return true;
+  }
+}
 
 export interface IndexProgress {
   phase: string;
@@ -66,6 +91,9 @@ export async function runFullIndex(
   const progress = (phase: string, current: number, total: number, message: string) => {
     onProgress?.({ phase, current, total, message });
   };
+
+  // Step 0: Ensure data directory exists (fresh deploy)
+  ensureDataDir();
 
   // Step 1: List files from GitHub
   progress("fetch", 0, 1, "Connecting to GitHub...");

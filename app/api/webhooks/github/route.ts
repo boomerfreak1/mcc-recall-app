@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
+import { isSupported } from "@/lib/parsers";
+import { indexFile } from "@/lib/indexing/pipeline";
+import { deleteDocument } from "@/lib/storage/db";
+import { deleteDocumentChunks } from "@/lib/storage/vectorstore";
 
 /**
- * GitHub webhook endpoint.
- * Receives push events and triggers re-indexing of changed files.
- *
- * Set GITHUB_WEBHOOK_SECRET env var to verify webhook signatures.
+ * POST /api/webhooks/github — GitHub push event handler.
+ * Verifies webhook signature (GITHUB_WEBHOOK_SECRET), then triggers
+ * incremental re-indexing for changed files.
  */
 
 interface GitHubPushPayload {
@@ -37,10 +40,14 @@ function verifySignature(
   const hmac = crypto.createHmac("sha256", secret);
   const digest = `sha256=${hmac.update(payload).digest("hex")}`;
 
-  return crypto.timingSafeEqual(
-    Buffer.from(digest),
-    Buffer.from(signature)
-  );
+  try {
+    return crypto.timingSafeEqual(
+      Buffer.from(digest),
+      Buffer.from(signature)
+    );
+  } catch {
+    return false;
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -52,11 +59,17 @@ export async function POST(request: NextRequest) {
   const secret = process.env.GITHUB_WEBHOOK_SECRET;
   if (secret) {
     if (!verifySignature(body, signature, secret)) {
+      console.warn("[webhook] Invalid signature rejected");
       return NextResponse.json(
         { error: "Invalid webhook signature" },
         { status: 401 }
       );
     }
+  }
+
+  // Handle ping event (sent when webhook is first configured)
+  if (event === "ping") {
+    return NextResponse.json({ message: "pong" });
   }
 
   // Only process push events
@@ -84,7 +97,7 @@ export async function POST(request: NextRequest) {
     commit.removed.forEach((f) => removedFiles.add(f));
   }
 
-  // Remove files that were both added/modified and removed — net removal wins
+  // Net removal wins if a file was both added and removed
   for (const f of removedFiles) {
     changedFiles.delete(f);
   }
@@ -98,13 +111,50 @@ export async function POST(request: NextRequest) {
     }
   );
 
-  // TODO: Trigger re-indexing pipeline for changed files
-  // This will be implemented in Phase 1 when the indexing pipeline is built.
+  // Process changes in the background (don't block the webhook response)
+  const results = {
+    indexed: [] as string[],
+    removed: [] as string[],
+    skipped: [] as string[],
+    errors: [] as Array<{ file: string; error: string }>,
+  };
+
+  // Handle removed files
+  for (const filePath of removedFiles) {
+    try {
+      deleteDocument(filePath);
+      await deleteDocumentChunks(filePath);
+      results.removed.push(filePath);
+    } catch (error) {
+      results.errors.push({
+        file: filePath,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  // Handle changed/added files
+  for (const filePath of changedFiles) {
+    if (!isSupported(filePath)) {
+      results.skipped.push(filePath);
+      continue;
+    }
+    try {
+      await indexFile(filePath);
+      results.indexed.push(filePath);
+    } catch (error) {
+      results.errors.push({
+        file: filePath,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  console.log("[webhook] Processing complete:", results);
 
   return NextResponse.json({
     received: true,
     branch: payload.ref,
-    changedFiles: Array.from(changedFiles),
-    removedFiles: Array.from(removedFiles),
+    ...results,
   });
 }

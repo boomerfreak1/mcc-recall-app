@@ -9,6 +9,7 @@ export {
   deleteChunksByDocumentId,
   getStats,
   clearAll,
+  dbHealthCheck,
 } from "./db";
 export type { DocumentRow, ChunkRow } from "./db";
 export {

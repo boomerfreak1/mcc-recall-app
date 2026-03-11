@@ -10,28 +10,35 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
-interface ServiceStatus {
-  github: {
-    connected: boolean;
-    repo?: string;
-    defaultBranch?: string;
-    error?: string;
-  };
-  embeddings: {
-    available: boolean;
-    provider?: string;
-    model?: string;
-    error?: string;
-  };
-  anthropic: {
-    configured: boolean;
-  };
+interface HealthChecks {
+  server: boolean;
+  ollama: boolean;
+  sqlite: boolean;
+  chromadb: boolean;
+  github: boolean;
+  anthropic: boolean;
+}
+
+interface HealthDetails {
+  ollama: { model?: string; error?: string };
+  sqlite: { path?: string; error?: string };
+  chromadb: { error?: string };
+  github: { repo?: string; error?: string };
+}
+
+interface IndexStats {
+  documents: number;
+  chunks: number;
+  totalTokens: number;
+  vectorCount: number;
 }
 
 interface HealthResponse {
   status: string;
   timestamp: string;
-  services: ServiceStatus;
+  checks: HealthChecks;
+  details: HealthDetails;
+  index: IndexStats;
 }
 
 interface IndexResult {
@@ -54,7 +61,7 @@ function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
   );
 }
 
-export default function HealthPage() {
+export default function HomePage() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -83,6 +90,7 @@ export default function HealthPage() {
       const res = await fetch("/api/index", { method: "POST" });
       const data = await res.json();
       setIndexResult(data);
+      fetchHealth(); // Refresh stats after indexing
     } catch (err) {
       setIndexResult({
         success: false,
@@ -118,7 +126,7 @@ export default function HealthPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {loading && (
+            {loading && !health && (
               <p className="text-sm text-muted-foreground">
                 Checking services...
               </p>
@@ -131,49 +139,83 @@ export default function HealthPage() {
             {health && (
               <>
                 <div className="space-y-3">
+                  <StatusBadge
+                    ok={health.checks.server}
+                    label="Next.js Server"
+                  />
+
                   <div>
                     <StatusBadge
-                      ok={health.services.github.connected}
+                      ok={health.checks.ollama}
                       label={
-                        health.services.github.connected
-                          ? `GitHub: ${health.services.github.repo}`
-                          : "GitHub: Not connected"
+                        health.checks.ollama
+                          ? `Ollama (${health.details.ollama.model})`
+                          : "Ollama"
                       }
                     />
-                    {health.services.github.error && (
+                    {health.details.ollama.error && (
                       <p className="text-xs text-muted-foreground ml-5 mt-1">
-                        {health.services.github.error}
+                        {health.details.ollama.error}
                       </p>
                     )}
                   </div>
 
                   <div>
                     <StatusBadge
-                      ok={health.services.embeddings.available}
-                      label={
-                        health.services.embeddings.available
-                          ? `Embeddings: ${health.services.embeddings.provider} (${health.services.embeddings.model})`
-                          : "Embeddings: Unavailable"
-                      }
+                      ok={health.checks.sqlite}
+                      label="SQLite Database"
                     />
-                    {health.services.embeddings.error && (
+                    {health.details.sqlite.error && (
                       <p className="text-xs text-muted-foreground ml-5 mt-1">
-                        {health.services.embeddings.error}
+                        {health.details.sqlite.error}
                       </p>
                     )}
                   </div>
 
                   <div>
                     <StatusBadge
-                      ok={health.services.anthropic.configured}
+                      ok={health.checks.chromadb}
+                      label="ChromaDB"
+                    />
+                    {health.details.chromadb.error && (
+                      <p className="text-xs text-muted-foreground ml-5 mt-1">
+                        {health.details.chromadb.error}
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <StatusBadge
+                      ok={health.checks.github}
                       label={
-                        health.services.anthropic.configured
-                          ? "Anthropic API: Configured"
-                          : "Anthropic API: Not configured"
+                        health.checks.github
+                          ? `GitHub: ${health.details.github.repo}`
+                          : "GitHub"
                       }
                     />
+                    {health.details.github.error && (
+                      <p className="text-xs text-muted-foreground ml-5 mt-1">
+                        {health.details.github.error}
+                      </p>
+                    )}
                   </div>
+
+                  <StatusBadge
+                    ok={health.checks.anthropic}
+                    label="Anthropic API Key"
+                  />
                 </div>
+
+                {/* Index Stats */}
+                {health.index.documents > 0 && (
+                  <div className="pt-2 border-t text-xs text-muted-foreground space-y-1">
+                    <p>
+                      {health.index.documents} documents, {health.index.chunks} chunks,{" "}
+                      ~{Math.round(health.index.totalTokens / 1000)}k tokens indexed
+                    </p>
+                    <p>{health.index.vectorCount} vectors in ChromaDB</p>
+                  </div>
+                )}
 
                 <div className="pt-2 border-t">
                   <div className="flex items-center justify-between">
