@@ -12,6 +12,8 @@ import {
   Button,
   Tag,
   InlineLoading,
+  Modal,
+  TextInput,
 } from "@carbon/react";
 import {
   Chat,
@@ -88,6 +90,9 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [indexing, setIndexing] = useState(false);
   const [indexResult, setIndexResult] = useState<IndexResult | null>(null);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [password, setPassword] = useState("");
+  const [passwordError, setPasswordError] = useState(false);
 
   const fetchHealth = async () => {
     setLoading(true);
@@ -257,7 +262,11 @@ export default function HomePage() {
                     kind="primary"
                     size="md"
                     renderIcon={CloudUpload}
-                    onClick={triggerIndex}
+                    onClick={() => {
+                      setPassword("");
+                      setPasswordError(false);
+                      setShowPasswordModal(true);
+                    }}
                     style={{ width: "100%" }}
                   >
                     Index Now
@@ -318,6 +327,56 @@ export default function HomePage() {
           </Column>
         </Grid>
       </Content>
+
+      <Modal
+        open={showPasswordModal}
+        onRequestClose={() => setShowPasswordModal(false)}
+        onRequestSubmit={() => {
+          if (password === "42069Dwightiscool") {
+            setShowPasswordModal(false);
+            setPassword("");
+            setPasswordError(false);
+            triggerIndex();
+          } else {
+            setPasswordError(true);
+          }
+        }}
+        modalHeading="Admin Authorization"
+        primaryButtonText="Start Indexing"
+        secondaryButtonText="Cancel"
+        size="sm"
+      >
+        <p style={{ fontSize: "0.875rem", color: "var(--cds-text-secondary)", marginBottom: "1rem" }}>
+          Re-indexing will temporarily make the chat unavailable. Enter the admin password to continue.
+        </p>
+        <TextInput
+          id="index-password"
+          type="password"
+          labelText="Password"
+          placeholder="Enter admin password"
+          value={password}
+          onChange={(e) => {
+            setPassword(e.target.value);
+            setPasswordError(false);
+          }}
+          invalid={passwordError}
+          invalidText="Incorrect password."
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              if (password === "42069Dwightiscool") {
+                setShowPasswordModal(false);
+                setPassword("");
+                setPasswordError(false);
+                triggerIndex();
+              } else {
+                setPasswordError(true);
+              }
+            }
+          }}
+          autoFocus
+        />
+      </Modal>
     </>
   );
 }
