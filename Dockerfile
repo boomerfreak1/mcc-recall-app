@@ -3,6 +3,7 @@ FROM node:20-bookworm-slim
 # Install system dependencies for better-sqlite3, Ollama, ChromaDB
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    zstd \
     python3 \
     python3-pip \
     python3-venv \
