@@ -23,6 +23,7 @@ import {
   Checkmark,
   CloseFilled,
   Catalog,
+  HeatMap,
 } from "@carbon/icons-react";
 
 interface HealthChecks {
@@ -307,19 +308,27 @@ export default function HomePage() {
 
               {/* Navigation tiles */}
               <div style={{ display: "flex", gap: "1rem" }}>
-                <ClickableTile href="/chat" style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", gap: "0.75rem", padding: "1.25rem 1rem", minHeight: "120px" }}>
+                <ClickableTile href="/chat" style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", gap: "0.75rem", padding: "1.25rem 0.75rem", minHeight: "120px" }}>
                   <Chat size={32} />
-                  <span style={{ fontSize: "1rem", fontWeight: 600 }}>Open Chat</span>
-                  <span style={{ fontSize: "0.75rem", color: "var(--cds-text-secondary)", textAlign: "center" }}>
-                    Ask questions about your indexed documents
+                  <span style={{ fontSize: "0.875rem", fontWeight: 600 }}>Chat</span>
+                  <span style={{ fontSize: "0.6875rem", color: "var(--cds-text-secondary)", textAlign: "center" }}>
+                    Ask about your documents
                   </span>
                 </ClickableTile>
 
-                <ClickableTile href="/blueprints.html" style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", gap: "0.75rem", padding: "1.25rem 1rem", minHeight: "120px" }}>
+                <ClickableTile href="/blueprints.html" style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", gap: "0.75rem", padding: "1.25rem 0.75rem", minHeight: "120px" }}>
                   <Catalog size={32} />
-                  <span style={{ fontSize: "1rem", fontWeight: 600 }}>Blueprints</span>
-                  <span style={{ fontSize: "0.75rem", color: "var(--cds-text-secondary)", textAlign: "center" }}>
-                    View all MCC workflow blueprints
+                  <span style={{ fontSize: "0.875rem", fontWeight: 600 }}>Blueprints</span>
+                  <span style={{ fontSize: "0.6875rem", color: "var(--cds-text-secondary)", textAlign: "center" }}>
+                    Workflow blueprints
+                  </span>
+                </ClickableTile>
+
+                <ClickableTile href="/heatmap.html" style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", gap: "0.75rem", padding: "1.25rem 0.75rem", minHeight: "120px" }}>
+                  <HeatMap size={32} />
+                  <span style={{ fontSize: "0.875rem", fontWeight: 600 }}>Heatmap</span>
+                  <span style={{ fontSize: "0.6875rem", color: "var(--cds-text-secondary)", textAlign: "center" }}>
+                    Workflow overlap analysis
                   </span>
                 </ClickableTile>
               </div>
