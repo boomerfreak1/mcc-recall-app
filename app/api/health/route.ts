@@ -3,6 +3,8 @@ import { getEmbeddingProvider } from "@/lib/embeddings";
 import { chromaHealthCheck, getCollectionStats } from "@/lib/storage/vectorstore";
 import { getStats, dbHealthCheck } from "@/lib/storage/db";
 
+export const dynamic = "force-dynamic";
+
 /**
  * GET /api/health — comprehensive health check.
  * Returns a JSON status object with each check as a boolean.
