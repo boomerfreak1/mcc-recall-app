@@ -34,6 +34,15 @@ interface HealthResponse {
   services: ServiceStatus;
 }
 
+interface IndexResult {
+  success: boolean;
+  documentsProcessed?: number;
+  chunksCreated?: number;
+  errors?: Array<{ file: string; error: string }>;
+  duration?: string;
+  error?: string;
+}
+
 function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
   return (
     <div className="flex items-center gap-2">
@@ -49,6 +58,8 @@ export default function HealthPage() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [indexing, setIndexing] = useState(false);
+  const [indexResult, setIndexResult] = useState<IndexResult | null>(null);
 
   const fetchHealth = async () => {
     setLoading(true);
@@ -62,6 +73,23 @@ export default function HealthPage() {
       setError(err instanceof Error ? err.message : "Failed to fetch health");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const triggerIndex = async () => {
+    setIndexing(true);
+    setIndexResult(null);
+    try {
+      const res = await fetch("/api/index", { method: "POST" });
+      const data = await res.json();
+      setIndexResult(data);
+    } catch (err) {
+      setIndexResult({
+        success: false,
+        error: err instanceof Error ? err.message : "Indexing failed",
+      });
+    } finally {
+      setIndexing(false);
     }
   };
 
@@ -79,6 +107,7 @@ export default function HealthPage() {
           </p>
         </div>
 
+        {/* System Health */}
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">System Health</CardTitle>
@@ -172,6 +201,73 @@ export default function HealthPage() {
                 </div>
               </>
             )}
+          </CardContent>
+        </Card>
+
+        {/* Indexing */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Indexing</CardTitle>
+            <CardDescription>
+              Pull documents from GitHub, parse, chunk, and embed them.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Button
+              onClick={triggerIndex}
+              disabled={indexing}
+              className="w-full"
+            >
+              {indexing ? "Indexing... (this may take a few minutes)" : "Index Now"}
+            </Button>
+
+            {indexResult && (
+              <div
+                className={`text-sm p-3 rounded-md ${
+                  indexResult.success
+                    ? "bg-green-50 text-green-800"
+                    : "bg-red-50 text-red-800"
+                }`}
+              >
+                {indexResult.success ? (
+                  <>
+                    <p className="font-medium">Indexing complete</p>
+                    <p>
+                      {indexResult.documentsProcessed} documents,{" "}
+                      {indexResult.chunksCreated} chunks indexed in{" "}
+                      {indexResult.duration}
+                    </p>
+                    {indexResult.errors && indexResult.errors.length > 0 && (
+                      <details className="mt-2">
+                        <summary className="cursor-pointer">
+                          {indexResult.errors.length} errors
+                        </summary>
+                        <ul className="mt-1 text-xs space-y-1">
+                          {indexResult.errors.map((e, i) => (
+                            <li key={i}>
+                              {e.file}: {e.error}
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                  </>
+                ) : (
+                  <p>Error: {indexResult.error}</p>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Navigation */}
+        <Card>
+          <CardContent className="pt-6">
+            <a href="/chat">
+              <Button variant="outline" className="w-full">
+                Open Chat &rarr;
+              </Button>
+            </a>
           </CardContent>
         </Card>
       </div>
