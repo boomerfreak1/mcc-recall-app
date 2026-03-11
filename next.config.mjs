@@ -1,5 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  sassOptions: {
+    silenceDeprecations: ["legacy-js-api", "import"],
+  },
   webpack: (config, { isServer }) => {
     if (isServer) {
       // ChromaDB tries to import @chroma-core/default-embed which is optional

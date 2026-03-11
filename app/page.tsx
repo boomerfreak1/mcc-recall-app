@@ -2,13 +2,25 @@
 
 import { useEffect, useState } from "react";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+  Header,
+  HeaderName,
+  Content,
+  Grid,
+  Column,
+  Tile,
+  ClickableTile,
+  Button,
+  Tag,
+  InlineLoading,
+} from "@carbon/react";
+import {
+  Chat,
+  Renew,
+  DataBase,
+  CloudUpload,
+  Checkmark,
+  CloseFilled,
+} from "@carbon/icons-react";
 
 interface HealthChecks {
   server: boolean;
@@ -51,13 +63,20 @@ interface IndexResult {
   error?: string;
 }
 
-function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
+function StatusRow({ ok, label, detail }: { ok: boolean; label: string; detail?: string }) {
   return (
-    <div className="flex items-center gap-2">
-      <div
-        className={`h-3 w-3 rounded-full ${ok ? "bg-green-500" : "bg-red-500"}`}
-      />
-      <span className="text-sm">{label}</span>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.75rem 0", borderBottom: "1px solid var(--cds-border-subtle)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+        {ok ? (
+          <Checkmark size={20} style={{ color: "var(--cds-support-success)" }} />
+        ) : (
+          <CloseFilled size={20} style={{ color: "var(--cds-support-error)" }} />
+        )}
+        <span style={{ fontSize: "0.875rem" }}>{label}</span>
+      </div>
+      {detail && (
+        <span style={{ fontSize: "0.75rem", color: "var(--cds-text-secondary)" }}>{detail}</span>
+      )}
     </div>
   );
 }
@@ -91,7 +110,7 @@ export default function HomePage() {
       const res = await fetch("/api/index", { method: "POST" });
       const data = await res.json();
       setIndexResult(data);
-      fetchHealth(); // Refresh stats after indexing
+      fetchHealth();
     } catch (err) {
       setIndexResult({
         success: false,
@@ -107,224 +126,187 @@ export default function HomePage() {
   }, []);
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-8 bg-gray-50">
-      <div className="w-full max-w-lg space-y-6">
-        <div className="text-center space-y-2">
-          <h1 className="text-4xl font-bold tracking-tight">Recall</h1>
-          <p className="text-muted-foreground">
-            Project Intelligence Platform
-          </p>
-        </div>
+    <>
+      <Header aria-label="Recall">
+        <HeaderName href="/" prefix="IBM">
+          Recall
+        </HeaderName>
+      </Header>
 
-        {/* System Health */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">System Health</CardTitle>
-            <CardDescription>
-              {health?.timestamp
-                ? `Last checked: ${new Date(health.timestamp).toLocaleTimeString()}`
-                : "Checking..."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {loading && !health && (
-              <p className="text-sm text-muted-foreground">
-                Checking services...
-              </p>
-            )}
+      <Content style={{ paddingTop: "3rem" }}>
+        <Grid style={{ maxWidth: "960px", margin: "0 auto" }}>
+          {/* Page heading */}
+          <Column lg={16} md={8} sm={4} style={{ marginBottom: "2rem", paddingTop: "2rem" }}>
+            <h1 style={{ fontSize: "2.25rem", fontWeight: 300, marginBottom: "0.5rem" }}>
+              Recall
+            </h1>
+            <p style={{ fontSize: "1rem", color: "var(--cds-text-secondary)" }}>
+              Project Intelligence Platform
+            </p>
+          </Column>
 
-            {error && (
-              <p className="text-sm text-red-600">Error: {error}</p>
-            )}
+          {/* System Health */}
+          <Column lg={10} md={8} sm={4} style={{ marginBottom: "1.5rem" }}>
+            <Tile style={{ height: "100%" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
+                <div>
+                  <h3 style={{ fontSize: "1.25rem", fontWeight: 600, marginBottom: "0.25rem" }}>
+                    System Health
+                  </h3>
+                  <p style={{ fontSize: "0.75rem", color: "var(--cds-text-secondary)" }}>
+                    {health?.timestamp
+                      ? `Last checked: ${new Date(health.timestamp).toLocaleTimeString()}`
+                      : "Checking..."}
+                  </p>
+                </div>
+                {health && (
+                  <Tag
+                    type={health.status === "healthy" ? "green" : "red"}
+                    size="md"
+                  >
+                    {health.status}
+                  </Tag>
+                )}
+              </div>
 
-            {health && (
-              <>
-                <div className="space-y-3">
-                  <StatusBadge
+              {loading && !health && (
+                <InlineLoading description="Checking services..." />
+              )}
+
+              {error && (
+                <p style={{ fontSize: "0.875rem", color: "var(--cds-support-error)" }}>
+                  Error: {error}
+                </p>
+              )}
+
+              {health && (
+                <>
+                  <StatusRow
                     ok={health.checks.server}
                     label="Next.js Server"
                   />
+                  <StatusRow
+                    ok={health.checks.ollama}
+                    label="Ollama Embeddings"
+                    detail={health.details.ollama.embeddingModel || health.details.ollama.error}
+                  />
+                  <StatusRow
+                    ok={health.checks.chatModel}
+                    label="Chat Model (Llama)"
+                    detail={health.details.chatModel?.model || health.details.chatModel?.error}
+                  />
+                  <StatusRow
+                    ok={health.checks.sqlite}
+                    label="SQLite Database"
+                    detail={health.details.sqlite.error}
+                  />
+                  <StatusRow
+                    ok={health.checks.chromadb}
+                    label="ChromaDB"
+                    detail={health.details.chromadb.error}
+                  />
+                  <StatusRow
+                    ok={health.checks.github}
+                    label="GitHub"
+                    detail={health.checks.github ? health.details.github.repo : health.details.github.error}
+                  />
 
-                  <div>
-                    <StatusBadge
-                      ok={health.checks.ollama}
-                      label={
-                        health.checks.ollama
-                          ? `Ollama Embeddings (${health.details.ollama.embeddingModel})`
-                          : "Ollama Embeddings"
-                      }
-                    />
-                    {health.details.ollama.error && (
-                      <p className="text-xs text-muted-foreground ml-5 mt-1">
-                        {health.details.ollama.error}
-                      </p>
-                    )}
-                  </div>
+                  {health.index.documents > 0 && (
+                    <div style={{ marginTop: "1rem", padding: "0.75rem", background: "var(--cds-layer-02)", fontSize: "0.75rem", color: "var(--cds-text-secondary)" }}>
+                      <strong>{health.index.documents}</strong> documents &middot;{" "}
+                      <strong>{health.index.chunks}</strong> chunks &middot;{" "}
+                      ~<strong>{Math.round(health.index.totalTokens / 1000)}k</strong> tokens &middot;{" "}
+                      <strong>{health.index.vectorCount}</strong> vectors
+                    </div>
+                  )}
 
-                  <div>
-                    <StatusBadge
-                      ok={health.checks.sqlite}
-                      label="SQLite Database"
-                    />
-                    {health.details.sqlite.error && (
-                      <p className="text-xs text-muted-foreground ml-5 mt-1">
-                        {health.details.sqlite.error}
-                      </p>
-                    )}
-                  </div>
-
-                  <div>
-                    <StatusBadge
-                      ok={health.checks.chromadb}
-                      label="ChromaDB"
-                    />
-                    {health.details.chromadb.error && (
-                      <p className="text-xs text-muted-foreground ml-5 mt-1">
-                        {health.details.chromadb.error}
-                      </p>
-                    )}
-                  </div>
-
-                  <div>
-                    <StatusBadge
-                      ok={health.checks.github}
-                      label={
-                        health.checks.github
-                          ? `GitHub: ${health.details.github.repo}`
-                          : "GitHub"
-                      }
-                    />
-                    {health.details.github.error && (
-                      <p className="text-xs text-muted-foreground ml-5 mt-1">
-                        {health.details.github.error}
-                      </p>
-                    )}
-                  </div>
-
-                  <div>
-                    <StatusBadge
-                      ok={health.checks.chatModel}
-                      label={
-                        health.checks.chatModel
-                          ? `Chat Model (${health.details.chatModel?.model ?? "llama3.2:3b"})`
-                          : "Chat Model (Llama)"
-                      }
-                    />
-                    {health.details.chatModel?.error && (
-                      <p className="text-xs text-muted-foreground ml-5 mt-1">
-                        {health.details.chatModel.error}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Index Stats */}
-                {health.index.documents > 0 && (
-                  <div className="pt-2 border-t text-xs text-muted-foreground space-y-1">
-                    <p>
-                      {health.index.documents} documents, {health.index.chunks} chunks,{" "}
-                      ~{Math.round(health.index.totalTokens / 1000)}k tokens indexed
-                    </p>
-                    <p>{health.index.vectorCount} vectors in ChromaDB</p>
-                  </div>
-                )}
-
-                <div className="pt-2 border-t">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">
-                      Overall:{" "}
-                      <span
-                        className={
-                          health.status === "healthy"
-                            ? "text-green-600"
-                            : "text-yellow-600"
-                        }
-                      >
-                        {health.status}
-                      </span>
-                    </span>
+                  <div style={{ marginTop: "1rem", display: "flex", justifyContent: "flex-end" }}>
                     <Button
-                      variant="outline"
+                      kind="ghost"
                       size="sm"
+                      renderIcon={Renew}
                       onClick={fetchHealth}
                       disabled={loading}
                     >
                       Refresh
                     </Button>
                   </div>
+                </>
+              )}
+            </Tile>
+          </Column>
+
+          {/* Right column: Index + Chat */}
+          <Column lg={6} md={8} sm={4} style={{ marginBottom: "1.5rem" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem", height: "100%" }}>
+              {/* Indexing */}
+              <Tile>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
+                  <DataBase size={20} />
+                  <h3 style={{ fontSize: "1.25rem", fontWeight: 600 }}>Indexing</h3>
                 </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
+                <p style={{ fontSize: "0.875rem", color: "var(--cds-text-secondary)", marginBottom: "1rem" }}>
+                  Pull documents from GitHub, parse, chunk, and embed them.
+                </p>
 
-        {/* Indexing */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Indexing</CardTitle>
-            <CardDescription>
-              Pull documents from GitHub, parse, chunk, and embed them.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Button
-              onClick={triggerIndex}
-              disabled={indexing}
-              className="w-full"
-            >
-              {indexing ? "Indexing... (this may take a few minutes)" : "Index Now"}
-            </Button>
-
-            {indexResult && (
-              <div
-                className={`text-sm p-3 rounded-md ${
-                  indexResult.success
-                    ? "bg-green-50 text-green-800"
-                    : "bg-red-50 text-red-800"
-                }`}
-              >
-                {indexResult.success ? (
-                  <>
-                    <p className="font-medium">Indexing complete</p>
-                    <p>
-                      {indexResult.documentsProcessed} documents,{" "}
-                      {indexResult.chunksCreated} chunks indexed in{" "}
-                      {indexResult.duration}
-                    </p>
-                    {indexResult.errors && indexResult.errors.length > 0 && (
-                      <details className="mt-2">
-                        <summary className="cursor-pointer">
-                          {indexResult.errors.length} errors
-                        </summary>
-                        <ul className="mt-1 text-xs space-y-1">
-                          {indexResult.errors.map((e, i) => (
-                            <li key={i}>
-                              {e.file}: {e.error}
-                            </li>
-                          ))}
-                        </ul>
-                      </details>
-                    )}
-                  </>
+                {indexing ? (
+                  <InlineLoading description="Indexing... this may take a few minutes" />
                 ) : (
-                  <p>Error: {indexResult.error}</p>
+                  <Button
+                    kind="primary"
+                    size="md"
+                    renderIcon={CloudUpload}
+                    onClick={triggerIndex}
+                    style={{ width: "100%" }}
+                  >
+                    Index Now
+                  </Button>
                 )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
 
-        {/* Navigation */}
-        <Card>
-          <CardContent className="pt-6">
-            <a href="/chat">
-              <Button variant="outline" className="w-full">
-                Open Chat &rarr;
-              </Button>
-            </a>
-          </CardContent>
-        </Card>
-      </div>
-    </main>
+                {indexResult && (
+                  <div style={{
+                    marginTop: "1rem",
+                    padding: "0.75rem",
+                    fontSize: "0.875rem",
+                    background: indexResult.success ? "var(--cds-support-success)" : "var(--cds-support-error)",
+                    color: "#fff",
+                  }}>
+                    {indexResult.success ? (
+                      <>
+                        <strong>Indexing complete.</strong>{" "}
+                        {indexResult.documentsProcessed} documents, {indexResult.chunksCreated} chunks in {indexResult.duration}
+                        {indexResult.errors && indexResult.errors.length > 0 && (
+                          <details style={{ marginTop: "0.5rem" }}>
+                            <summary style={{ cursor: "pointer" }}>
+                              {indexResult.errors.length} errors
+                            </summary>
+                            <ul style={{ margin: "0.5rem 0 0 1rem", fontSize: "0.75rem" }}>
+                              {indexResult.errors.map((e, i) => (
+                                <li key={i}>{e.file}: {e.error}</li>
+                              ))}
+                            </ul>
+                          </details>
+                        )}
+                      </>
+                    ) : (
+                      <>Error: {indexResult.error}</>
+                    )}
+                  </div>
+                )}
+              </Tile>
+
+              {/* Chat link */}
+              <ClickableTile href="/chat" style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", gap: "0.75rem", minHeight: "120px" }}>
+                <Chat size={32} />
+                <span style={{ fontSize: "1rem", fontWeight: 600 }}>Open Chat</span>
+                <span style={{ fontSize: "0.75rem", color: "var(--cds-text-secondary)" }}>
+                  Ask questions about your indexed documents
+                </span>
+              </ClickableTile>
+            </div>
+          </Column>
+        </Grid>
+      </Content>
+    </>
   );
 }
