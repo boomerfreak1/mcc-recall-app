@@ -62,7 +62,8 @@ ${chunk.content}`
     const contextText = contextBlocks.join("\n\n");
 
     // Step 4: Stream from Claude Sonnet
-    const anthropic = new Anthropic();
+    const apiKey = (process.env.ANTHROPIC_API_KEY ?? "").trim();
+    const anthropic = new Anthropic({ apiKey });
 
     const stream = anthropic.messages.stream({
       model: "claude-sonnet-4-20250514",
