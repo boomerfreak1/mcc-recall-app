@@ -4,6 +4,8 @@ import { useState, useRef, useEffect } from "react";
 import {
   Header,
   HeaderName,
+  HeaderNavigation,
+  HeaderMenuItem,
   Content,
   Grid,
   Column,
@@ -14,6 +16,24 @@ import {
 } from "@carbon/react";
 import { Send, ArrowLeft } from "@carbon/icons-react";
 
+type TagType = "blue" | "red" | "purple" | "teal" | "cyan" | "green" | "gray" | "magenta" | "cool-gray" | "warm-gray" | "high-contrast" | "outline";
+
+const ENTITY_TYPE_COLORS: Record<string, TagType> = {
+  decision: "blue",
+  gap: "red",
+  dependency: "purple",
+  stakeholder: "teal",
+  milestone: "cyan",
+  workflow: "green",
+};
+
+const STATUS_COLORS: Record<string, TagType> = {
+  open: "red",
+  resolved: "green",
+  blocked: "magenta",
+  unknown: "gray",
+};
+
 interface Source {
   document: string;
   section: string;
@@ -21,10 +41,23 @@ interface Source {
   distance: number;
 }
 
+interface EntityRef {
+  id: number;
+  entity_type: string;
+  content: string;
+  status: string;
+  owner: string | null;
+  domain: string;
+  source_document: string;
+  relation_type?: string;
+}
+
 interface Message {
   role: "user" | "assistant";
   content: string;
   sources?: Source[];
+  entities?: EntityRef[];
+  intent?: string;
 }
 
 export default function ChatPage() {
@@ -48,7 +81,7 @@ export default function ChatPage() {
 
     setMessages((prev) => [
       ...prev,
-      { role: "assistant", content: "", sources: [] },
+      { role: "assistant", content: "", sources: [], entities: [] },
     ]);
 
     try {
@@ -94,6 +127,16 @@ export default function ChatPage() {
                 }
                 return updated;
               });
+            } else if (event.type === "entities") {
+              setMessages((prev) => {
+                const updated = [...prev];
+                const last = updated[updated.length - 1];
+                if (last.role === "assistant") {
+                  last.entities = event.entities;
+                  last.intent = event.intent;
+                }
+                return updated;
+              });
             } else if (event.type === "text") {
               setMessages((prev) => {
                 const updated = [...prev];
@@ -132,6 +175,12 @@ export default function ChatPage() {
         <HeaderName href="/" prefix="IBM">
           Recall
         </HeaderName>
+        <HeaderNavigation aria-label="Navigation">
+          <HeaderMenuItem href="/">Dashboard</HeaderMenuItem>
+          <HeaderMenuItem href="/chat">Chat</HeaderMenuItem>
+          <HeaderMenuItem href="/blueprints.html">Blueprints</HeaderMenuItem>
+          <HeaderMenuItem href="/heatmap.html">Heatmap</HeaderMenuItem>
+        </HeaderNavigation>
       </Header>
 
       <div style={{
@@ -171,9 +220,28 @@ export default function ChatPage() {
                 <h2 style={{ fontSize: "1.75rem", fontWeight: 300, marginBottom: "0.5rem" }}>
                   Ask Recall
                 </h2>
-                <p style={{ fontSize: "0.875rem" }}>
+                <p style={{ fontSize: "0.875rem", marginBottom: "1.5rem" }}>
                   Ask questions about your indexed project documents.
                 </p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", justifyContent: "center" }}>
+                  {[
+                    "Who owns the CSR workstream?",
+                    "Summarize Innovation Studio status",
+                    "What should I be worried about?",
+                  ].map((q) => (
+                    <Button
+                      key={q}
+                      kind="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setInput(q);
+                      }}
+                      style={{ fontSize: "0.75rem" }}
+                    >
+                      {q}
+                    </Button>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -199,7 +267,17 @@ export default function ChatPage() {
                     {msg.content}
                   </div>
                 ) : (
-                  <Tile style={{ maxWidth: "75%", padding: "1rem" }}>
+                  <Tile style={{ maxWidth: "85%", padding: "1rem" }}>
+                    {/* Intent badge */}
+                    {msg.intent && (
+                      <div style={{ marginBottom: "0.5rem" }}>
+                        <Tag type="high-contrast" size="sm">
+                          {msg.intent} query
+                        </Tag>
+                      </div>
+                    )}
+
+                    {/* Response text */}
                     <div style={{
                       fontSize: "0.875rem",
                       lineHeight: 1.6,
@@ -218,9 +296,75 @@ export default function ChatPage() {
                       )}
                     </div>
 
-                    {msg.sources && msg.sources.length > 0 && msg.content && (
+                    {/* Entity references */}
+                    {msg.entities && msg.entities.length > 0 && msg.content && (
                       <details style={{
                         marginTop: "1rem",
+                        paddingTop: "0.75rem",
+                        borderTop: "1px solid var(--cds-border-subtle)",
+                      }}>
+                        <summary style={{
+                          cursor: "pointer",
+                          fontSize: "0.75rem",
+                          color: "var(--cds-text-secondary)",
+                          marginBottom: "0.5rem",
+                        }}>
+                          {msg.entities.length} entities referenced
+                        </summary>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
+                          {msg.entities.slice(0, 10).map((entity, j) => (
+                            <div
+                              key={j}
+                              style={{
+                                display: "flex",
+                                alignItems: "flex-start",
+                                gap: "0.375rem",
+                                fontSize: "0.75rem",
+                                padding: "0.375rem 0",
+                                borderBottom: j < Math.min(msg.entities!.length, 10) - 1
+                                  ? "1px solid var(--cds-border-subtle)"
+                                  : "none",
+                              }}
+                            >
+                              <Tag
+                                type={ENTITY_TYPE_COLORS[entity.entity_type] ?? "gray"}
+                                size="sm"
+                                style={{ flexShrink: 0 }}
+                              >
+                                {entity.entity_type}
+                              </Tag>
+                              <Tag
+                                type={STATUS_COLORS[entity.status] ?? "gray"}
+                                size="sm"
+                                style={{ flexShrink: 0 }}
+                              >
+                                {entity.status}
+                              </Tag>
+                              <span style={{ color: "var(--cds-text-primary)", lineHeight: 1.4 }}>
+                                {entity.content.length > 120
+                                  ? entity.content.substring(0, 120) + "..."
+                                  : entity.content}
+                              </span>
+                              {entity.owner && (
+                                <Tag type="cool-gray" size="sm" style={{ flexShrink: 0 }}>
+                                  {entity.owner}
+                                </Tag>
+                              )}
+                            </div>
+                          ))}
+                          {msg.entities.length > 10 && (
+                            <span style={{ fontSize: "0.6875rem", color: "var(--cds-text-secondary)" }}>
+                              +{msg.entities.length - 10} more entities
+                            </span>
+                          )}
+                        </div>
+                      </details>
+                    )}
+
+                    {/* Source citations */}
+                    {msg.sources && msg.sources.length > 0 && msg.content && (
+                      <details style={{
+                        marginTop: "0.75rem",
                         paddingTop: "0.75rem",
                         borderTop: "1px solid var(--cds-border-subtle)",
                       }}>

@@ -1,0 +1,211 @@
+/**
+ * Entity and relation extraction using Ollama.
+ * Sends chunks to the configured chat model for structured extraction.
+ */
+
+import { ENTITY_EXTRACTION_PROMPT, RELATION_EXTRACTION_PROMPT } from "./prompts";
+
+const DEFAULT_BASE_URL = "http://localhost:11434";
+
+export interface ExtractedEntity {
+  entity_type: "decision" | "dependency" | "gap" | "stakeholder" | "milestone" | "workflow";
+  content: string;
+  status: "open" | "resolved" | "blocked" | "unknown";
+  owner: string | null;
+  confidence: number;
+}
+
+export interface ExtractedRelation {
+  source_index: number;
+  target_index: number;
+  relation_type: "blocks" | "owns" | "references" | "supersedes";
+  confidence: number;
+}
+
+const VALID_ENTITY_TYPES = new Set(["decision", "dependency", "gap", "stakeholder", "milestone", "workflow"]);
+const VALID_STATUSES = new Set(["open", "resolved", "blocked", "unknown"]);
+const VALID_RELATION_TYPES = new Set(["blocks", "owns", "references", "supersedes"]);
+
+/**
+ * Call Ollama chat API (non-streaming) and return the full response text.
+ */
+async function ollamaChat(prompt: string, systemPrompt?: string): Promise<string> {
+  const baseUrl = (process.env.OLLAMA_BASE_URL ?? DEFAULT_BASE_URL).replace(/\/$/, "");
+  const model = process.env.OLLAMA_EXTRACTION_MODEL ?? process.env.OLLAMA_CHAT_MODEL ?? "llama3.2:1b";
+
+  const messages: Array<{ role: string; content: string }> = [];
+  if (systemPrompt) {
+    messages.push({ role: "system", content: systemPrompt });
+  }
+  messages.push({ role: "user", content: prompt });
+
+  const response = await fetch(`${baseUrl}/api/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model,
+      messages,
+      stream: false,
+      options: {
+        temperature: 0.1,
+        num_predict: 2048,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Ollama chat error ${response.status}: ${body}`);
+  }
+
+  const data = (await response.json()) as { message?: { content?: string } };
+  return data.message?.content ?? "";
+}
+
+/**
+ * Attempt to parse JSON from LLM output, handling common issues
+ * like markdown code fences, trailing text, etc.
+ */
+function parseLooseJson<T>(text: string): T | null {
+  // Strip markdown code fences
+  let cleaned = text.replace(/```json\s*/gi, "").replace(/```\s*/g, "");
+
+  // Try to find JSON object boundaries
+  const firstBrace = cleaned.indexOf("{");
+  const lastBrace = cleaned.lastIndexOf("}");
+
+  if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
+    return null;
+  }
+
+  cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+
+  try {
+    return JSON.parse(cleaned) as T;
+  } catch {
+    // Try fixing common issues: trailing commas
+    try {
+      const fixed = cleaned.replace(/,\s*([}\]])/g, "$1");
+      return JSON.parse(fixed) as T;
+    } catch {
+      return null;
+    }
+  }
+}
+
+/**
+ * Validate and clean a single extracted entity.
+ */
+function validateEntity(raw: Record<string, unknown>): ExtractedEntity | null {
+  const entityType = String(raw.entity_type ?? "").toLowerCase();
+  if (!VALID_ENTITY_TYPES.has(entityType)) return null;
+
+  const content = String(raw.content ?? "").trim();
+  if (!content || content.length < 5) return null;
+
+  let status = String(raw.status ?? "unknown").toLowerCase();
+  if (!VALID_STATUSES.has(status)) status = "unknown";
+
+  const owner = raw.owner && typeof raw.owner === "string" && raw.owner.trim()
+    ? raw.owner.trim()
+    : null;
+
+  let confidence = Number(raw.confidence);
+  if (isNaN(confidence) || confidence < 0 || confidence > 1) confidence = 0.5;
+
+  return {
+    entity_type: entityType as ExtractedEntity["entity_type"],
+    content: content.substring(0, 1000),
+    status: status as ExtractedEntity["status"],
+    owner,
+    confidence: Math.round(confidence * 100) / 100,
+  };
+}
+
+/**
+ * Validate a single extracted relation.
+ */
+function validateRelation(raw: Record<string, unknown>, entityCount: number): ExtractedRelation | null {
+  const sourceIndex = Number(raw.source_index);
+  const targetIndex = Number(raw.target_index);
+
+  if (isNaN(sourceIndex) || isNaN(targetIndex)) return null;
+  if (sourceIndex < 0 || sourceIndex >= entityCount) return null;
+  if (targetIndex < 0 || targetIndex >= entityCount) return null;
+  if (sourceIndex === targetIndex) return null;
+
+  const relationType = String(raw.relation_type ?? "").toLowerCase();
+  if (!VALID_RELATION_TYPES.has(relationType)) return null;
+
+  let confidence = Number(raw.confidence);
+  if (isNaN(confidence) || confidence < 0 || confidence > 1) confidence = 0.5;
+
+  return {
+    source_index: sourceIndex,
+    target_index: targetIndex,
+    relation_type: relationType as ExtractedRelation["relation_type"],
+    confidence: Math.round(confidence * 100) / 100,
+  };
+}
+
+/**
+ * Extract entities from a single chunk of text.
+ */
+export async function extractEntities(chunkContent: string): Promise<ExtractedEntity[]> {
+  try {
+    const prompt = ENTITY_EXTRACTION_PROMPT + chunkContent;
+    const response = await ollamaChat(prompt);
+
+    const parsed = parseLooseJson<{ entities?: unknown[] }>(response);
+    if (!parsed || !Array.isArray(parsed.entities)) {
+      console.warn("[extractor] Failed to parse entity extraction response");
+      return [];
+    }
+
+    const entities: ExtractedEntity[] = [];
+    for (const raw of parsed.entities) {
+      if (typeof raw !== "object" || raw === null) continue;
+      const validated = validateEntity(raw as Record<string, unknown>);
+      if (validated) entities.push(validated);
+    }
+
+    return entities;
+  } catch (error) {
+    console.error("[extractor] Entity extraction failed:", error instanceof Error ? error.message : error);
+    return [];
+  }
+}
+
+/**
+ * Extract relations between a set of entities from a document.
+ */
+export async function extractRelations(entities: ExtractedEntity[]): Promise<ExtractedRelation[]> {
+  if (entities.length < 2) return [];
+
+  try {
+    const entityList = entities
+      .map((e, i) => `[${i}] (${e.entity_type}) ${e.content}${e.owner ? ` [owner: ${e.owner}]` : ""}`)
+      .join("\n");
+
+    const prompt = RELATION_EXTRACTION_PROMPT + entityList;
+    const response = await ollamaChat(prompt);
+
+    const parsed = parseLooseJson<{ relations?: unknown[] }>(response);
+    if (!parsed || !Array.isArray(parsed.relations)) {
+      console.warn("[extractor] Failed to parse relation extraction response");
+      return [];
+    }
+
+    const relations: ExtractedRelation[] = [];
+    for (const raw of parsed.relations) {
+      if (typeof raw !== "object" || raw === null) continue;
+      const validated = validateRelation(raw as Record<string, unknown>, entities.length);
+      if (validated) relations.push(validated);
+    }
+
+    return relations;
+  } catch (error) {
+    console.error("[extractor] Relation extraction failed:", error instanceof Error ? error.message : error);
+    return [];
+  }
+}

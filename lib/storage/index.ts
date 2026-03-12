@@ -10,8 +10,25 @@ export {
   getStats,
   clearAll,
   dbHealthCheck,
+  insertEntities,
+  insertEntityRelations,
+  getEntities,
+  getEntityById,
+  getEntityRelations,
+  getChunkById,
+  deleteEntitiesByChunkId,
+  deleteEntitiesByDocumentId,
+  createIndexSnapshot,
+  getEntityStats,
+  getEntitiesWithDocumentPath,
+  getLatestSnapshot,
+  getRecentSnapshots,
+  updateSnapshotChangeDelta,
+  updateEntityLastSeen,
+  updateEntityResolved,
+  getChunkDocumentPathMap,
 } from "./db";
-export type { DocumentRow, ChunkRow } from "./db";
+export type { DocumentRow, ChunkRow, EntityRow, EntityRelationRow, IndexSnapshotRow } from "./db";
 export {
   addChunks,
   querySimilarChunks,

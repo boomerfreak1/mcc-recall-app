@@ -3,6 +3,10 @@ import { GitHubClient, getGitHubClient } from "../github";
 import { parseDocument, isSupported } from "../parsers";
 import { chunkDocument, Chunk } from "./chunker";
 import { getEmbeddingProvider } from "../embeddings";
+import { extractEntities, extractRelations } from "../ai";
+import type { ExtractedEntity } from "../ai";
+import { computeChangeDelta } from "./differ";
+import type { PreviousEntity } from "./differ";
 import {
   upsertDocument,
   insertChunks,
@@ -13,6 +17,17 @@ import {
   addChunks as addVectorChunks,
   deleteDocumentChunks,
   resetCollection,
+  insertEntities,
+  insertEntityRelations,
+  deleteEntitiesByDocumentId,
+  createIndexSnapshot,
+  getEntityStats,
+  getEntitiesWithDocumentPath,
+  getChunkDocumentPathMap,
+  updateSnapshotChangeDelta,
+  updateEntityLastSeen,
+  updateEntityResolved,
+  getEntities,
 } from "../storage";
 
 /**
@@ -108,7 +123,27 @@ export async function runFullIndex(
     `Found ${supportedFiles.length} supported files out of ${allFiles.length} total`
   );
 
-  // Step 2: Clear existing data for full re-index
+  // Step 2: Capture previous entities for change detection, then clear
+  progress("prepare", 0, 1, "Capturing previous entity snapshot...");
+  let previousEntities: PreviousEntity[] = [];
+  try {
+    const prevWithDocs = getEntitiesWithDocumentPath();
+    previousEntities = prevWithDocs.map((e) => ({
+      id: e.id,
+      entity_type: e.entity_type,
+      content: e.content,
+      status: e.status,
+      owner: e.owner,
+      domain: e.domain,
+      document_path: e.document_path,
+    }));
+    if (previousEntities.length > 0) {
+      console.log(`[index] Captured ${previousEntities.length} previous entities for change detection`);
+    }
+  } catch (err) {
+    console.warn("[index] Failed to capture previous entities:", err instanceof Error ? err.message : err);
+  }
+
   progress("prepare", 0, 1, "Clearing existing index...");
   clearAll();
   await resetCollection();
@@ -203,6 +238,82 @@ export async function runFullIndex(
         }))
       );
 
+      // Phase 2: Entity extraction per chunk
+      progress(
+        "extract",
+        i,
+        supportedFiles.length,
+        `Extracting entities from ${chunks.length} chunks in ${file.path}`
+      );
+
+      const allDocEntities: Array<{ entity: ExtractedEntity; chunkId: string }> = [];
+
+      for (const chunk of chunks) {
+        try {
+          const extracted = await extractEntities(chunk.content);
+          if (extracted.length > 0) {
+            const storedEntities = insertEntities(
+              extracted.map((e) => ({
+                chunk_id: chunk.id,
+                entity_type: e.entity_type,
+                content: e.content,
+                status: e.status,
+                owner: e.owner,
+                domain,
+                confidence: e.confidence,
+              }))
+            );
+            for (let k = 0; k < extracted.length; k++) {
+              allDocEntities.push({ entity: extracted[k], chunkId: storedEntities[k]?.chunk_id ?? chunk.id });
+            }
+          }
+        } catch (err) {
+          console.warn(`[index] Entity extraction failed for chunk ${chunk.id}:`, err instanceof Error ? err.message : err);
+        }
+      }
+
+      // Phase 2: Relation extraction per document
+      if (allDocEntities.length >= 2) {
+        try {
+          const entityList = allDocEntities.map((e) => e.entity);
+          const relations = await extractRelations(entityList);
+
+          if (relations.length > 0) {
+            // We need entity DB IDs — query them back
+            const db = (await import("../storage/db")).getDb();
+            const docEntityRows = db
+              .prepare(
+                `SELECT e.id, e.content FROM entities e
+                 JOIN chunks c ON e.chunk_id = c.id
+                 WHERE c.document_id = ?
+                 ORDER BY e.id`
+              )
+              .all(docRow.id) as Array<{ id: number; content: string }>;
+
+            if (docEntityRows.length >= 2) {
+              const validRelations = relations
+                .filter(
+                  (r) =>
+                    r.source_index < docEntityRows.length &&
+                    r.target_index < docEntityRows.length
+                )
+                .map((r) => ({
+                  source_entity_id: docEntityRows[r.source_index].id,
+                  target_entity_id: docEntityRows[r.target_index].id,
+                  relation_type: r.relation_type,
+                  confidence: r.confidence,
+                }));
+
+              if (validRelations.length > 0) {
+                insertEntityRelations(validRelations);
+              }
+            }
+          }
+        } catch (err) {
+          console.warn(`[index] Relation extraction failed for ${file.path}:`, err instanceof Error ? err.message : err);
+        }
+      }
+
       documentsProcessed++;
       chunksCreated += chunks.length;
     } catch (error) {
@@ -212,12 +323,50 @@ export async function runFullIndex(
     }
   }
 
+  // Phase 2: Change detection + snapshot
+  progress("detect", 0, 1, "Running semantic change detection...");
+  let changeDelta: Record<string, unknown> | undefined;
+  try {
+    const currentEntities = getEntities();
+    const docPathMap = getChunkDocumentPathMap();
+    const delta = await computeChangeDelta(currentEntities, docPathMap, previousEntities);
+    changeDelta = delta as unknown as Record<string, unknown>;
+
+    // Update entity timestamps based on change classification
+    const modifiedIds = delta.changes
+      .filter((c) => c.change_category === "modified" || c.change_category === "unchanged")
+      .map((c) => c.entity_id);
+    if (modifiedIds.length > 0) {
+      updateEntityLastSeen(modifiedIds);
+    }
+
+    // Note: "resolved" entities in the delta refer to previous entity IDs
+    // that no longer exist (they were cleared). We log them in the delta
+    // but can't update their rows since they've been deleted.
+
+    console.log(`[index] Change detection complete: ${delta.summary.new} new, ${delta.summary.resolved} resolved, ${delta.summary.modified} modified, ${delta.summary.unchanged} unchanged`);
+  } catch (err) {
+    console.warn("[index] Change detection failed:", err instanceof Error ? err.message : err);
+  }
+
+  // Create index snapshot with change delta
+  try {
+    const entityStats = getEntityStats();
+    createIndexSnapshot({
+      entity_summary: entityStats,
+      change_delta: changeDelta,
+    });
+  } catch (err) {
+    console.warn("[index] Failed to create index snapshot:", err instanceof Error ? err.message : err);
+  }
+
   const duration = Date.now() - startTime;
+  const entityStats = getEntityStats();
   progress(
     "done",
     supportedFiles.length,
     supportedFiles.length,
-    `Indexed ${documentsProcessed} documents, ${chunksCreated} chunks in ${(duration / 1000).toFixed(1)}s`
+    `Indexed ${documentsProcessed} documents, ${chunksCreated} chunks, ${entityStats.total} entities in ${(duration / 1000).toFixed(1)}s`
   );
 
   return { documentsProcessed, chunksCreated, errors, duration };
@@ -255,6 +404,7 @@ export async function indexFile(
   // Check if document already exists
   const existing = getDocumentByPath(filePath);
   if (existing) {
+    deleteEntitiesByDocumentId(existing.id);
     deleteChunksByDocumentId(existing.id);
     await deleteDocumentChunks(filePath);
   }
@@ -308,6 +458,73 @@ export async function indexFile(
       },
     }))
   );
+
+  // Phase 2: Entity extraction for incremental indexing
+  const allDocEntities: Array<{ entity: ExtractedEntity; chunkId: string }> = [];
+
+  for (const chunk of chunks) {
+    try {
+      const extracted = await extractEntities(chunk.content);
+      if (extracted.length > 0) {
+        const storedEntities = insertEntities(
+          extracted.map((e) => ({
+            chunk_id: chunk.id,
+            entity_type: e.entity_type,
+            content: e.content,
+            status: e.status,
+            owner: e.owner,
+            domain,
+            confidence: e.confidence,
+          }))
+        );
+        for (let k = 0; k < extracted.length; k++) {
+          allDocEntities.push({ entity: extracted[k], chunkId: storedEntities[k]?.chunk_id ?? chunk.id });
+        }
+      }
+    } catch (err) {
+      console.warn(`[index] Entity extraction failed for chunk ${chunk.id}:`, err instanceof Error ? err.message : err);
+    }
+  }
+
+  if (allDocEntities.length >= 2) {
+    try {
+      const entityList = allDocEntities.map((e) => e.entity);
+      const relations = await extractRelations(entityList);
+
+      if (relations.length > 0) {
+        const db = (await import("../storage/db")).getDb();
+        const docEntityRows = db
+          .prepare(
+            `SELECT e.id, e.content FROM entities e
+             JOIN chunks c ON e.chunk_id = c.id
+             WHERE c.document_id = ?
+             ORDER BY e.id`
+          )
+          .all(docRow.id) as Array<{ id: number; content: string }>;
+
+        if (docEntityRows.length >= 2) {
+          const validRelations = relations
+            .filter(
+              (r) =>
+                r.source_index < docEntityRows.length &&
+                r.target_index < docEntityRows.length
+            )
+            .map((r) => ({
+              source_entity_id: docEntityRows[r.source_index].id,
+              target_entity_id: docEntityRows[r.target_index].id,
+              relation_type: r.relation_type,
+              confidence: r.confidence,
+            }));
+
+          if (validRelations.length > 0) {
+            insertEntityRelations(validRelations);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn(`[index] Relation extraction failed for ${filePath}:`, err instanceof Error ? err.message : err);
+    }
+  }
 
   return { chunks: chunks.length };
 }
