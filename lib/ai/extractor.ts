@@ -28,7 +28,7 @@ const VALID_STATUSES = new Set(["open", "resolved", "blocked", "unknown"]);
 const VALID_RELATION_TYPES = new Set(["blocks", "owns", "references", "supersedes"]);
 
 /** Whether Mistral API is available for extraction. */
-function useMistralApi(): boolean {
+function isMistralEnabled(): boolean {
   return !!process.env.MISTRAL_API_KEY;
 }
 
@@ -36,7 +36,7 @@ let _loggedBackend = false;
 function logBackendOnce(): void {
   if (!_loggedBackend) {
     _loggedBackend = true;
-    const backend = useMistralApi() ? `Mistral API (${process.env.MISTRAL_MODEL ?? "mistral-small-latest"})` : "Ollama (local)";
+    const backend = isMistralEnabled() ? `Mistral API (${process.env.MISTRAL_MODEL ?? "mistral-small-latest"})` : "Ollama (local)";
     console.log(`[extractor] Using ${backend} for extraction`);
   }
 }
@@ -122,7 +122,7 @@ async function ollamaChat(prompt: string, systemPrompt?: string): Promise<string
  */
 async function extractionChat(prompt: string, systemPrompt?: string): Promise<string> {
   logBackendOnce();
-  if (useMistralApi()) {
+  if (isMistralEnabled()) {
     return mistralChat(prompt, systemPrompt);
   }
   return ollamaChat(prompt, systemPrompt);
@@ -266,8 +266,8 @@ export async function extractEntitiesBatch(
 
   if (eligible.length === 0) return result;
 
-  const defaultBatch = useMistralApi() ? "10" : "4";
-  const defaultConcurrency = useMistralApi() ? "4" : "2";
+  const defaultBatch = isMistralEnabled() ? "10" : "4";
+  const defaultConcurrency = isMistralEnabled() ? "4" : "2";
   const BATCH_SIZE = parseInt(process.env.EXTRACTION_BATCH_SIZE ?? defaultBatch, 10);
   const CONCURRENCY = parseInt(process.env.EXTRACTION_CONCURRENCY ?? defaultConcurrency, 10);
 
