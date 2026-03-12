@@ -389,6 +389,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [indexing, setIndexing] = useState(false);
+  const [indexProgress, setIndexProgress] = useState<string | null>(null);
   const [indexResult, setIndexResult] = useState<IndexResult | null>(null);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [password, setPassword] = useState("");
@@ -409,26 +410,65 @@ export default function DashboardPage() {
     }
   };
 
+  const pollIndexStatus = async () => {
+    const poll = async () => {
+      try {
+        const res = await fetch("/api/index");
+        if (!res.ok) return;
+        const data = await res.json();
+
+        if (data.running) {
+          setIndexProgress(data.progress?.message ?? "Processing...");
+          setTimeout(poll, 3000);
+        } else if (data.result) {
+          setIndexing(false);
+          setIndexProgress(null);
+          setIndexResult(data.result);
+          fetchSummary();
+        }
+      } catch {
+        // Network hiccup, keep polling
+        setTimeout(poll, 5000);
+      }
+    };
+    poll();
+  };
+
   const triggerIndex = async () => {
     setIndexing(true);
     setIndexResult(null);
+    setIndexProgress("Starting indexing...");
     try {
       const res = await fetch("/api/index", { method: "POST" });
       const data = await res.json();
-      setIndexResult(data);
-      fetchSummary();
+      if (data.started) {
+        // Poll for completion
+        setTimeout(pollIndexStatus, 2000);
+      } else {
+        // Already running or error
+        setIndexProgress(data.error ?? "Indexing in progress");
+        setTimeout(pollIndexStatus, 2000);
+      }
     } catch (err) {
+      setIndexing(false);
+      setIndexProgress(null);
       setIndexResult({
         success: false,
-        error: err instanceof Error ? err.message : "Indexing failed",
+        error: err instanceof Error ? err.message : "Failed to start indexing",
       });
-    } finally {
-      setIndexing(false);
     }
   };
 
   useEffect(() => {
     fetchSummary();
+    // Check if indexing is already running (e.g. page refresh mid-index)
+    fetch("/api/index").then((r) => r.json()).then((data) => {
+      if (data.running) {
+        setIndexing(true);
+        setIndexProgress(data.progress?.message ?? "Indexing in progress...");
+        pollIndexStatus();
+      }
+    }).catch(() => {});
   }, []);
 
   const hasEntities = summary?.has_entities ?? false;
@@ -530,7 +570,7 @@ export default function DashboardPage() {
                   The dashboard requires entity data from the indexing pipeline. Run a full index to extract decisions, gaps, dependencies, stakeholders, and milestones from your MCC corpus.
                 </p>
                 {indexing ? (
-                  <InlineLoading description="Indexing... this may take a few minutes" />
+                  <InlineLoading description={indexProgress ?? "Indexing..."} />
                 ) : (
                   <Button
                     kind="primary"
@@ -853,7 +893,7 @@ export default function DashboardPage() {
                   </ClickableTile>
                   <Tile style={{ flex: "1 1 140px", display: "flex", alignItems: "center", gap: "0.75rem", padding: "1rem" }}>
                     {indexing ? (
-                      <InlineLoading description="Indexing..." />
+                      <InlineLoading description={indexProgress ?? "Indexing..."} />
                     ) : (
                       <Button
                         kind="ghost"
