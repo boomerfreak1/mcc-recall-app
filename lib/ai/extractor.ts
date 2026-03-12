@@ -1,6 +1,7 @@
 /**
- * Entity and relation extraction using Ollama.
- * Sends chunks to the configured chat model for structured extraction.
+ * Entity and relation extraction.
+ * Uses Mistral API when MISTRAL_API_KEY is set (fast, large context, JSON mode).
+ * Falls back to local Ollama otherwise.
  */
 
 import { ENTITY_EXTRACTION_PROMPT, RELATION_EXTRACTION_PROMPT } from "./prompts";
@@ -25,6 +26,59 @@ export interface ExtractedRelation {
 const VALID_ENTITY_TYPES = new Set(["decision", "dependency", "gap", "stakeholder", "milestone", "workflow"]);
 const VALID_STATUSES = new Set(["open", "resolved", "blocked", "unknown"]);
 const VALID_RELATION_TYPES = new Set(["blocks", "owns", "references", "supersedes"]);
+
+/** Whether Mistral API is available for extraction. */
+function useMistralApi(): boolean {
+  return !!process.env.MISTRAL_API_KEY;
+}
+
+let _loggedBackend = false;
+function logBackendOnce(): void {
+  if (!_loggedBackend) {
+    _loggedBackend = true;
+    const backend = useMistralApi() ? `Mistral API (${process.env.MISTRAL_MODEL ?? "mistral-small-latest"})` : "Ollama (local)";
+    console.log(`[extractor] Using ${backend} for extraction`);
+  }
+}
+
+/**
+ * Call Mistral API with JSON mode for clean structured output.
+ */
+async function mistralChat(prompt: string, systemPrompt?: string): Promise<string> {
+  const apiKey = process.env.MISTRAL_API_KEY!;
+  const model = process.env.MISTRAL_MODEL ?? "mistral-small-latest";
+
+  const messages: Array<{ role: string; content: string }> = [];
+  if (systemPrompt) {
+    messages.push({ role: "system", content: systemPrompt });
+  }
+  messages.push({ role: "user", content: prompt });
+
+  const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      temperature: 0.1,
+      max_tokens: 4096,
+      response_format: { type: "json_object" },
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Mistral API error ${response.status}: ${body}`);
+  }
+
+  const data = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  return data.choices?.[0]?.message?.content ?? "";
+}
 
 /**
  * Call Ollama chat API (non-streaming) and return the full response text.
@@ -61,6 +115,17 @@ async function ollamaChat(prompt: string, systemPrompt?: string): Promise<string
 
   const data = (await response.json()) as { message?: { content?: string } };
   return data.message?.content ?? "";
+}
+
+/**
+ * Route extraction calls to Mistral API or local Ollama.
+ */
+async function extractionChat(prompt: string, systemPrompt?: string): Promise<string> {
+  logBackendOnce();
+  if (useMistralApi()) {
+    return mistralChat(prompt, systemPrompt);
+  }
+  return ollamaChat(prompt, systemPrompt);
 }
 
 /**
@@ -155,7 +220,7 @@ function validateRelation(raw: Record<string, unknown>, entityCount: number): Ex
 export async function extractEntities(chunkContent: string): Promise<ExtractedEntity[]> {
   try {
     const prompt = ENTITY_EXTRACTION_PROMPT + chunkContent;
-    const response = await ollamaChat(prompt);
+    const response = await extractionChat(prompt);
 
     const parsed = parseLooseJson<{ entities?: unknown[] }>(response);
     if (!parsed || !Array.isArray(parsed.entities)) {
@@ -201,8 +266,10 @@ export async function extractEntitiesBatch(
 
   if (eligible.length === 0) return result;
 
-  const BATCH_SIZE = parseInt(process.env.EXTRACTION_BATCH_SIZE ?? "4", 10);
-  const CONCURRENCY = parseInt(process.env.EXTRACTION_CONCURRENCY ?? "2", 10);
+  const defaultBatch = useMistralApi() ? "10" : "4";
+  const defaultConcurrency = useMistralApi() ? "4" : "2";
+  const BATCH_SIZE = parseInt(process.env.EXTRACTION_BATCH_SIZE ?? defaultBatch, 10);
+  const CONCURRENCY = parseInt(process.env.EXTRACTION_CONCURRENCY ?? defaultConcurrency, 10);
 
   // Build all batches upfront
   const batches: Array<typeof eligible> = [];
@@ -222,7 +289,7 @@ export async function extractEntitiesBatch(
 
     try {
       const prompt = ENTITY_EXTRACTION_PROMPT + combinedText;
-      const response = await ollamaChat(prompt);
+      const response = await extractionChat(prompt);
 
       const parsed = parseLooseJson<{ entities?: unknown[] }>(response);
       if (!parsed || !Array.isArray(parsed.entities)) {
@@ -294,7 +361,7 @@ export async function extractRelations(entities: ExtractedEntity[]): Promise<Ext
       .join("\n");
 
     const prompt = RELATION_EXTRACTION_PROMPT + entityList;
-    const response = await ollamaChat(prompt);
+    const response = await extractionChat(prompt);
 
     const parsed = parseLooseJson<{ relations?: unknown[] }>(response);
     if (!parsed || !Array.isArray(parsed.relations)) {
