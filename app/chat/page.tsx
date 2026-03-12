@@ -177,6 +177,7 @@ export default function ChatPage() {
         </HeaderName>
         <HeaderNavigation aria-label="Navigation">
           <HeaderMenuItem href="/">Dashboard</HeaderMenuItem>
+          <HeaderMenuItem href="/risks">Risks</HeaderMenuItem>
           <HeaderMenuItem href="/chat">Chat</HeaderMenuItem>
           <HeaderMenuItem href="/blueprints.html">Blueprints</HeaderMenuItem>
           <HeaderMenuItem href="/heatmap.html">Heatmap</HeaderMenuItem>

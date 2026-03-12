@@ -33,12 +33,31 @@ import {
   Add,
   Edit,
   Time,
+  Information,
+  ChevronDown,
+  ChevronUp,
 } from "@carbon/icons-react";
 
 // --- Types ---
 
+interface FactorScores {
+  gap_resolution: number;
+  dependency_coverage: number;
+  decision_freshness: number;
+  ownership_distribution: number;
+}
+
+interface DomainHealth {
+  domain: string;
+  score: number;
+  entity_count: number;
+  factors: FactorScores;
+}
+
 interface DashboardSummary {
   health_score: number;
+  health_factors: FactorScores;
+  health_domains: DomainHealth[];
   previous_health_score: number | null;
   entity_counts: Record<string, number>;
   previous_entity_counts: Record<string, number> | null;
@@ -49,6 +68,7 @@ interface DashboardSummary {
     total: number;
     open: number;
     blocked: number;
+    health_score: number | null;
     recent_change: {
       content: string;
       change_category: string;
@@ -64,12 +84,14 @@ interface DashboardSummary {
   }>;
   attention_queue: Array<{
     id: number;
-    entity_type: string;
-    content: string;
+    risk_type: string;
+    severity: "critical" | "high" | "medium" | "low";
+    description: string;
     domain: string;
-    severity: "high" | "medium";
-    reason: string;
+    detected_at: string;
   }>;
+  critical_risk_count: number;
+  total_active_risks: number;
   last_indexed_at: string | null;
   has_entities: boolean;
 }
@@ -102,6 +124,22 @@ const CHANGE_ICONS: Record<string, { icon: typeof Add; color: string; label: str
   modified: { icon: Edit, color: "var(--cds-support-warning)", label: "Modified" },
 };
 
+const SEVERITY_TAG_COLORS: Record<string, TagType> = {
+  critical: "red",
+  high: "magenta",
+  medium: "warm-gray",
+  low: "cool-gray",
+};
+
+const RISK_TYPE_LABELS: Record<string, string> = {
+  stale_gap: "Stale Gap",
+  ownerless_dependency: "Ownerless Dep.",
+  contradictory_decisions: "Contradictions",
+  orphaned_milestone: "Orphaned Milestone",
+  ownership_concentration: "Owner Concentration",
+  stale_decision: "Stale Decision",
+};
+
 const COUNTER_LABELS: Record<string, string> = {
   decisions: "Decisions",
   gaps: "Open Gaps",
@@ -110,6 +148,42 @@ const COUNTER_LABELS: Record<string, string> = {
   milestones: "Milestones",
   workflows: "Workflows",
 };
+
+const FACTOR_INFO: Record<string, { label: string; weight: string; description: string }> = {
+  gap_resolution: {
+    label: "Gap Resolution",
+    weight: "30%",
+    description: "Percentage of identified gaps that have been resolved. Score = resolved gaps / total gaps. No gaps = 100. Domains with many unresolved gaps score lower, indicating areas that need attention.",
+  },
+  dependency_coverage: {
+    label: "Dep. Coverage",
+    weight: "25%",
+    description: "Percentage of dependencies that have both an assigned owner and a known status (not 'unknown'). No dependencies = 100. Low scores mean dependencies lack accountability or tracking.",
+  },
+  decision_freshness: {
+    label: "Decision Fresh.",
+    weight: "20%",
+    description: "Recency-weighted score across all active decisions. Decisions <=7 days: 100pts, 8-14 days: 75pts, 15-30 days: 50pts, >30 days: 25pts. If contradictory decisions exist, -20 penalty. No decisions = 50 (neutral).",
+  },
+  ownership_distribution: {
+    label: "Ownership Dist.",
+    weight: "25%",
+    description: "How well open work items (gaps, dependencies, milestones, workflows) are distributed. Penalizes unassigned items heavily. If any single owner holds >50% of items, capped at 60. Balanced ownership = higher score.",
+  },
+};
+
+// --- Helpers ---
+
+function relativeTime(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "1 day ago";
+  return `${days} days ago`;
+}
 
 // --- Helper Components ---
 
@@ -123,33 +197,162 @@ function TrendIndicator({ current, previous }: { current: number; previous: numb
   return <Subtract size={14} style={{ color: "var(--cds-text-secondary)" }} />;
 }
 
-function HealthScoreDisplay({ score, previousScore }: { score: number; previousScore: number | null }) {
-  const color = score >= 70
-    ? "var(--cds-support-success)"
-    : score >= 40
-    ? "var(--cds-support-warning)"
-    : "var(--cds-support-error)";
+function scoreColor(score: number): string {
+  if (score >= 70) return "var(--cds-support-success)";
+  if (score >= 40) return "var(--cds-support-warning)";
+  return "var(--cds-support-error)";
+}
 
-  const trend = previousScore !== null ? score - previousScore : null;
+function FactorBar({ factor, score }: { factor: string; score: number }) {
+  const info = FACTOR_INFO[factor];
+  const [showTooltip, setShowTooltip] = useState(false);
 
   return (
-    <div style={{ textAlign: "center", padding: "1.5rem 1rem" }}>
-      <p style={{ fontSize: "0.75rem", color: "var(--cds-text-secondary)", marginBottom: "0.5rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-        Project Health
-      </p>
-      <div style={{ fontSize: "4rem", fontWeight: 300, color, lineHeight: 1 }}>
-        {score}
+    <div style={{ position: "relative" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.25rem" }}>
+        <span style={{ fontSize: "0.6875rem", color: "var(--cds-text-secondary)", display: "flex", alignItems: "center", gap: "0.25rem" }}>
+          {info?.label ?? factor}
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowTooltip(!showTooltip); }}
+            style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex", alignItems: "center" }}
+            aria-label={`Info about ${info?.label}`}
+          >
+            <Information size={12} style={{ color: "var(--cds-icon-secondary)" }} />
+          </button>
+        </span>
+        <span style={{ fontSize: "0.6875rem", fontWeight: 600, color: scoreColor(score) }}>{score}</span>
       </div>
-      <div style={{ marginTop: "0.5rem", fontSize: "0.75rem", color: "var(--cds-text-secondary)" }}>
-        {trend !== null ? (
-          <span style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem" }}>
-            {trend > 0 ? <ArrowUp size={12} style={{ color: "var(--cds-support-success)" }} /> : trend < 0 ? <ArrowDown size={12} style={{ color: "var(--cds-support-error)" }} /> : null}
-            {trend > 0 ? `+${trend}` : trend} vs previous
-          </span>
-        ) : (
-          "First snapshot — no trend data"
-        )}
+      <div style={{ height: "4px", background: "var(--cds-border-subtle)", borderRadius: "2px" }}>
+        <div style={{
+          height: "100%",
+          width: `${score}%`,
+          background: scoreColor(score),
+          borderRadius: "2px",
+          transition: "width 0.3s ease",
+        }} />
       </div>
+      {showTooltip && info && (
+        <div style={{
+          position: "absolute",
+          top: "100%",
+          left: 0,
+          right: 0,
+          marginTop: "0.25rem",
+          padding: "0.5rem",
+          background: "var(--cds-layer-02)",
+          border: "1px solid var(--cds-border-subtle)",
+          fontSize: "0.6875rem",
+          lineHeight: 1.5,
+          color: "var(--cds-text-secondary)",
+          zIndex: 10,
+          boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.25rem" }}>
+            <strong style={{ color: "var(--cds-text-primary)" }}>{info.label}</strong>
+            <span>Weight: {info.weight}</span>
+          </div>
+          {info.description}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HealthScoreDisplay({
+  score,
+  previousScore,
+  factors,
+  domains,
+}: {
+  score: number;
+  previousScore: number | null;
+  factors: FactorScores;
+  domains: DomainHealth[];
+}) {
+  const color = scoreColor(score);
+  const trend = previousScore !== null ? score - previousScore : null;
+  const [showDomainDetail, setShowDomainDetail] = useState(false);
+
+  return (
+    <div style={{ padding: "1rem" }}>
+      <div style={{ textAlign: "center", marginBottom: "1rem" }}>
+        <p style={{ fontSize: "0.75rem", color: "var(--cds-text-secondary)", marginBottom: "0.5rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+          Project Health
+        </p>
+        <div style={{ fontSize: "3.5rem", fontWeight: 300, color, lineHeight: 1 }}>
+          {score}
+        </div>
+        <div style={{ marginTop: "0.375rem", fontSize: "0.75rem", color: "var(--cds-text-secondary)" }}>
+          {trend !== null ? (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem" }}>
+              {trend > 0 ? <ArrowUp size={12} style={{ color: "var(--cds-support-success)" }} /> : trend < 0 ? <ArrowDown size={12} style={{ color: "var(--cds-support-error)" }} /> : null}
+              {trend > 0 ? `+${trend}` : trend} vs previous
+            </span>
+          ) : (
+            "First snapshot"
+          )}
+        </div>
+      </div>
+
+      {/* Factor Breakdown */}
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginBottom: "0.75rem" }}>
+        {(Object.keys(FACTOR_INFO) as Array<keyof FactorScores>).map((key) => (
+          <FactorBar key={key} factor={key} score={factors[key]} />
+        ))}
+      </div>
+
+      {/* Domain Detail Toggle */}
+      {domains.length > 0 && (
+        <button
+          onClick={() => setShowDomainDetail(!showDomainDetail)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "0.25rem",
+            width: "100%",
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            fontSize: "0.6875rem",
+            color: "var(--cds-link-primary)",
+            padding: "0.375rem 0",
+          }}
+        >
+          {showDomainDetail ? "Hide" : "View"} domain breakdown
+          {showDomainDetail ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+        </button>
+      )}
+
+      {showDomainDetail && (
+        <div style={{
+          marginTop: "0.5rem",
+          borderTop: "1px solid var(--cds-border-subtle)",
+          paddingTop: "0.5rem",
+          maxHeight: "280px",
+          overflowY: "auto",
+        }}>
+          {domains.map((d) => (
+            <div key={d.domain} style={{
+              padding: "0.5rem 0",
+              borderBottom: "1px solid var(--cds-border-subtle)",
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.375rem" }}>
+                <span style={{ fontSize: "0.75rem", fontWeight: 600 }}>{d.domain}</span>
+                <span style={{ fontSize: "0.875rem", fontWeight: 600, color: scoreColor(d.score) }}>{d.score}</span>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.125rem 0.75rem" }}>
+                {(Object.keys(FACTOR_INFO) as Array<keyof FactorScores>).map((key) => (
+                  <div key={key} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.625rem", color: "var(--cds-text-secondary)" }}>
+                    <span>{FACTOR_INFO[key].label}</span>
+                    <span style={{ color: scoreColor(d.factors[key]), fontWeight: 600 }}>{d.factors[key]}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -160,6 +363,22 @@ function SkeletonPanel({ height = "200px" }: { height?: string }) {
       <SkeletonText heading width="40%" />
       <SkeletonPlaceholder style={{ width: "100%", height: "60%", marginTop: "1rem" }} />
     </Tile>
+  );
+}
+
+function DomainHealthBadge({ score }: { score: number | null }) {
+  if (score === null) return null;
+  return (
+    <span style={{
+      fontSize: "0.6875rem",
+      fontWeight: 600,
+      color: scoreColor(score),
+      background: `${scoreColor(score)}15`,
+      padding: "0.125rem 0.375rem",
+      borderRadius: "2px",
+    }}>
+      {score}
+    </span>
   );
 }
 
@@ -223,6 +442,37 @@ export default function DashboardPage() {
         </HeaderName>
         <HeaderNavigation aria-label="Navigation">
           <HeaderMenuItem href="/">Dashboard</HeaderMenuItem>
+          <HeaderMenuItem href="/risks">
+            <span style={{ display: "inline-flex", alignItems: "center", gap: "0.375rem" }}>
+              Risks
+              {(summary?.critical_risk_count ?? 0) > 0 && (
+                <span style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  minWidth: "16px",
+                  height: "16px",
+                  borderRadius: "8px",
+                  background: "#da1e28",
+                  color: "#fff",
+                  fontSize: "0.625rem",
+                  fontWeight: 700,
+                  padding: "0 4px",
+                }}>
+                  {summary?.critical_risk_count}
+                </span>
+              )}
+              {!summary?.critical_risk_count && (summary?.total_active_risks ?? 0) > 0 && (
+                <span style={{
+                  display: "inline-block",
+                  width: "6px",
+                  height: "6px",
+                  borderRadius: "50%",
+                  background: "var(--cds-support-warning)",
+                }} />
+              )}
+            </span>
+          </HeaderMenuItem>
           <HeaderMenuItem href="/chat">Chat</HeaderMenuItem>
           <HeaderMenuItem href="/blueprints.html">Blueprints</HeaderMenuItem>
           <HeaderMenuItem href="/heatmap.html">Heatmap</HeaderMenuItem>
@@ -321,10 +571,10 @@ export default function DashboardPage() {
           {loading && (
             <>
               <Column lg={5} md={4} sm={4} style={{ marginBottom: "1.5rem" }}>
-                <SkeletonPanel height="180px" />
+                <SkeletonPanel height="280px" />
               </Column>
               <Column lg={11} md={4} sm={4} style={{ marginBottom: "1.5rem" }}>
-                <SkeletonPanel height="180px" />
+                <SkeletonPanel height="280px" />
               </Column>
               <Column lg={16} md={8} sm={4} style={{ marginBottom: "1.5rem" }}>
                 <SkeletonPanel height="140px" />
@@ -347,6 +597,8 @@ export default function DashboardPage() {
                   <HealthScoreDisplay
                     score={summary.health_score}
                     previousScore={summary.previous_health_score}
+                    factors={summary.health_factors}
+                    domains={summary.health_domains}
                   />
                 </Tile>
               </Column>
@@ -397,7 +649,10 @@ export default function DashboardPage() {
                           <h4 style={{ fontSize: "0.875rem", fontWeight: 600 }}>
                             {d.domain}
                           </h4>
-                          <Tag type="cool-gray" size="sm">{d.total}</Tag>
+                          <div style={{ display: "flex", gap: "0.375rem", alignItems: "center" }}>
+                            <DomainHealthBadge score={d.health_score} />
+                            <Tag type="cool-gray" size="sm">{d.total}</Tag>
+                          </div>
                         </div>
                         <div style={{ fontSize: "0.75rem", color: "var(--cds-text-secondary)", marginBottom: "0.5rem" }}>
                           {d.open > 0 && (
@@ -504,63 +759,79 @@ export default function DashboardPage() {
 
               <Column lg={8} md={4} sm={4} style={{ marginBottom: "1.5rem" }}>
                 <Tile style={{ height: "100%", padding: "1.25rem" }}>
-                  <h3 style={{ fontSize: "0.875rem", fontWeight: 600, marginBottom: "1rem", color: "var(--cds-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                    Attention Queue
-                  </h3>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+                    <h3 style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--cds-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      Active Risks
+                    </h3>
+                    {summary.total_active_risks > 0 && (
+                      <Tag type="high-contrast" size="sm">{summary.total_active_risks} total</Tag>
+                    )}
+                  </div>
                   {summary.attention_queue.length === 0 ? (
                     <div style={{ textAlign: "center", padding: "2rem 0", color: "var(--cds-text-secondary)" }}>
                       <CheckmarkOutline size={32} style={{ marginBottom: "0.5rem" }} />
-                      <p style={{ fontSize: "0.875rem" }}>Nothing needs attention right now.</p>
+                      <p style={{ fontSize: "0.875rem" }}>No active risks detected.</p>
                     </div>
                   ) : (
-                    <div style={{ maxHeight: "400px", overflowY: "auto" }}>
-                      {summary.attention_queue.map((item, i) => (
-                        <div
-                          key={`${item.id}-${i}`}
-                          style={{
-                            display: "flex",
-                            gap: "0.75rem",
-                            padding: "0.625rem 0",
-                            borderBottom: i < summary.attention_queue.length - 1
-                              ? "1px solid var(--cds-border-subtle)"
-                              : "none",
-                            alignItems: "flex-start",
-                          }}
-                        >
-                          <Tag
-                            type={item.severity === "high" ? "red" : "warm-gray"}
-                            size="sm"
-                            style={{ flexShrink: 0 }}
+                    <>
+                      <div style={{ maxHeight: "340px", overflowY: "auto" }}>
+                        {summary.attention_queue.map((item, i) => (
+                          <div
+                            key={`${item.id}-${i}`}
+                            style={{
+                              display: "flex",
+                              gap: "0.75rem",
+                              padding: "0.625rem 0",
+                              borderBottom: i < summary.attention_queue.length - 1
+                                ? "1px solid var(--cds-border-subtle)"
+                                : "none",
+                              alignItems: "flex-start",
+                            }}
                           >
-                            {item.severity}
-                          </Tag>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <p style={{
-                              fontSize: "0.8125rem",
-                              lineHeight: 1.4,
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              display: "-webkit-box",
-                              WebkitLineClamp: 2,
-                              WebkitBoxOrient: "vertical",
-                            }}>
-                              {item.content}
-                            </p>
-                            <div style={{ display: "flex", gap: "0.375rem", marginTop: "0.25rem", alignItems: "center" }}>
-                              <Tag type={TYPE_COLORS[item.entity_type] ?? "gray"} size="sm">
-                                {item.entity_type}
-                              </Tag>
-                              <span style={{ fontSize: "0.6875rem", color: "var(--cds-text-secondary)" }}>
-                                {item.domain}
-                              </span>
-                              <span style={{ fontSize: "0.6875rem", color: "var(--cds-text-secondary)" }}>
-                                · {item.reason}
-                              </span>
+                            <Tag
+                              type={SEVERITY_TAG_COLORS[item.severity] ?? "gray"}
+                              size="sm"
+                              style={{ flexShrink: 0 }}
+                            >
+                              {item.severity}
+                            </Tag>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <p style={{
+                                fontSize: "0.8125rem",
+                                lineHeight: 1.4,
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                display: "-webkit-box",
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: "vertical",
+                              }}>
+                                {item.description.split("\n")[0]}
+                              </p>
+                              <div style={{ display: "flex", gap: "0.375rem", marginTop: "0.25rem", alignItems: "center" }}>
+                                <Tag type="high-contrast" size="sm">
+                                  {RISK_TYPE_LABELS[item.risk_type] ?? item.risk_type}
+                                </Tag>
+                                {item.domain && (
+                                  <span style={{ fontSize: "0.6875rem", color: "var(--cds-text-secondary)" }}>
+                                    {item.domain}
+                                  </span>
+                                )}
+                                <span style={{ fontSize: "0.6875rem", color: "var(--cds-text-secondary)" }}>
+                                  · {relativeTime(item.detected_at)}
+                                </span>
+                              </div>
                             </div>
                           </div>
+                        ))}
+                      </div>
+                      {summary.total_active_risks > 5 && (
+                        <div style={{ textAlign: "center", marginTop: "0.75rem", borderTop: "1px solid var(--cds-border-subtle)", paddingTop: "0.75rem" }}>
+                          <Button kind="ghost" size="sm" href="/risks">
+                            View all {summary.total_active_risks} risks
+                          </Button>
                         </div>
-                      ))}
-                    </div>
+                      )}
+                    </>
                   )}
                 </Tile>
               </Column>
@@ -640,7 +911,7 @@ export default function DashboardPage() {
         size="sm"
       >
         <p style={{ fontSize: "0.875rem", color: "var(--cds-text-secondary)", marginBottom: "1rem" }}>
-          Re-indexing will pull documents from GitHub, extract entities, and run change detection. Enter the admin password to continue.
+          Re-indexing will pull documents from GitHub, extract entities, run risk detection, and compute health scores. Enter the admin password to continue.
         </p>
         <TextInput
           id="index-password"

@@ -27,8 +27,16 @@ export {
   updateEntityLastSeen,
   updateEntityResolved,
   getChunkDocumentPathMap,
+  insertRiskItem,
+  getRiskItems,
+  getRiskById,
+  dismissRisk,
+  resolveRisksByType,
+  getActiveRiskByTypeAndEntity,
+  clearRiskItems,
+  getRiskStats,
 } from "./db";
-export type { DocumentRow, ChunkRow, EntityRow, EntityRelationRow, IndexSnapshotRow } from "./db";
+export type { DocumentRow, ChunkRow, EntityRow, EntityRelationRow, IndexSnapshotRow, RiskItemRow } from "./db";
 export {
   addChunks,
   querySimilarChunks,

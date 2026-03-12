@@ -88,6 +88,19 @@ function initSchema(db: Database.Database): void {
       change_delta TEXT
     );
 
+    -- Phase 3: Risk Radar table
+    CREATE TABLE IF NOT EXISTS risk_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      entity_id INTEGER REFERENCES entities(id) ON DELETE SET NULL,
+      risk_type TEXT NOT NULL,
+      severity TEXT NOT NULL DEFAULT 'medium',
+      description TEXT NOT NULL,
+      suggested_action TEXT,
+      detected_at TEXT DEFAULT (datetime('now')),
+      resolved_at TEXT,
+      dismissed_at TEXT
+    );
+
     CREATE INDEX IF NOT EXISTS idx_entities_chunk_id ON entities(chunk_id);
     CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(entity_type);
     CREATE INDEX IF NOT EXISTS idx_entities_domain ON entities(domain);
@@ -95,6 +108,9 @@ function initSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_entities_owner ON entities(owner);
     CREATE INDEX IF NOT EXISTS idx_entity_relations_source ON entity_relations(source_entity_id);
     CREATE INDEX IF NOT EXISTS idx_entity_relations_target ON entity_relations(target_entity_id);
+    CREATE INDEX IF NOT EXISTS idx_risk_items_type ON risk_items(risk_type);
+    CREATE INDEX IF NOT EXISTS idx_risk_items_severity ON risk_items(severity);
+    CREATE INDEX IF NOT EXISTS idx_risk_items_entity ON risk_items(entity_id);
   `);
 }
 
@@ -291,7 +307,7 @@ export function getStats(): {
  */
 export function clearAll(): void {
   const db = getDb();
-  db.exec("DELETE FROM entity_relations; DELETE FROM entities; DELETE FROM chunks; DELETE FROM documents; DELETE FROM index_snapshots;");
+  db.exec("DELETE FROM risk_items; DELETE FROM entity_relations; DELETE FROM entities; DELETE FROM chunks; DELETE FROM documents; DELETE FROM index_snapshots;");
 }
 
 /**
@@ -621,6 +637,136 @@ export function getChunkDocumentPathMap(): Map<string, string> {
     map.set(row.chunk_id, row.document_path);
   }
   return map;
+}
+
+// --- Risk Items CRUD (Phase 3) ---
+
+export interface RiskItemRow {
+  id: number;
+  entity_id: number | null;
+  risk_type: string;
+  severity: string;
+  description: string;
+  suggested_action: string | null;
+  detected_at: string;
+  resolved_at: string | null;
+  dismissed_at: string | null;
+}
+
+export function insertRiskItem(item: {
+  entity_id: number | null;
+  risk_type: string;
+  severity: string;
+  description: string;
+  suggested_action: string | null;
+}): RiskItemRow {
+  const db = getDb();
+  const result = db.prepare(
+    `INSERT INTO risk_items (entity_id, risk_type, severity, description, suggested_action)
+     VALUES (?, ?, ?, ?, ?)`
+  ).run(
+    item.entity_id,
+    item.risk_type,
+    item.severity,
+    item.description,
+    item.suggested_action
+  );
+  return db
+    .prepare("SELECT * FROM risk_items WHERE id = ?")
+    .get(result.lastInsertRowid) as RiskItemRow;
+}
+
+export function getRiskItems(filters?: {
+  severity?: string;
+  risk_type?: string;
+  active_only?: boolean;
+}): RiskItemRow[] {
+  const db = getDb();
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+
+  if (filters?.severity) {
+    conditions.push("severity = ?");
+    params.push(filters.severity);
+  }
+  if (filters?.risk_type) {
+    conditions.push("risk_type = ?");
+    params.push(filters.risk_type);
+  }
+  if (filters?.active_only) {
+    conditions.push("resolved_at IS NULL AND dismissed_at IS NULL");
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  return db
+    .prepare(`SELECT * FROM risk_items ${where} ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 END, detected_at DESC`)
+    .all(...params) as RiskItemRow[];
+}
+
+export function getRiskById(id: number): RiskItemRow | undefined {
+  const db = getDb();
+  return db
+    .prepare("SELECT * FROM risk_items WHERE id = ?")
+    .get(id) as RiskItemRow | undefined;
+}
+
+export function dismissRisk(id: number): void {
+  const db = getDb();
+  db.prepare("UPDATE risk_items SET dismissed_at = datetime('now') WHERE id = ?").run(id);
+}
+
+export function resolveRisksByType(riskType: string, entityId: number): void {
+  const db = getDb();
+  db.prepare(
+    "UPDATE risk_items SET resolved_at = datetime('now') WHERE risk_type = ? AND entity_id = ? AND resolved_at IS NULL AND dismissed_at IS NULL"
+  ).run(riskType, entityId);
+}
+
+export function getActiveRiskByTypeAndEntity(riskType: string, entityId: number): RiskItemRow | undefined {
+  const db = getDb();
+  return db
+    .prepare(
+      "SELECT * FROM risk_items WHERE risk_type = ? AND entity_id = ? AND resolved_at IS NULL AND dismissed_at IS NULL LIMIT 1"
+    )
+    .get(riskType, entityId) as RiskItemRow | undefined;
+}
+
+export function clearRiskItems(): void {
+  const db = getDb();
+  db.exec("DELETE FROM risk_items");
+}
+
+export function getRiskStats(): {
+  total: number;
+  active: number;
+  bySeverity: Record<string, number>;
+  byType: Record<string, number>;
+} {
+  const db = getDb();
+  const total = (
+    db.prepare("SELECT COUNT(*) as count FROM risk_items").get() as { count: number }
+  ).count;
+  const active = (
+    db.prepare("SELECT COUNT(*) as count FROM risk_items WHERE resolved_at IS NULL AND dismissed_at IS NULL").get() as { count: number }
+  ).count;
+
+  const bySeverity: Record<string, number> = {};
+  const sevRows = db
+    .prepare("SELECT severity, COUNT(*) as count FROM risk_items WHERE resolved_at IS NULL AND dismissed_at IS NULL GROUP BY severity")
+    .all() as Array<{ severity: string; count: number }>;
+  for (const row of sevRows) {
+    bySeverity[row.severity] = row.count;
+  }
+
+  const byType: Record<string, number> = {};
+  const typeRows = db
+    .prepare("SELECT risk_type, COUNT(*) as count FROM risk_items WHERE resolved_at IS NULL AND dismissed_at IS NULL GROUP BY risk_type")
+    .all() as Array<{ risk_type: string; count: number }>;
+  for (const row of typeRows) {
+    byType[row.risk_type] = row.count;
+  }
+
+  return { total, active, bySeverity, byType };
 }
 
 export function getEntityStats(): {

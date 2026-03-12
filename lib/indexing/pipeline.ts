@@ -7,6 +7,7 @@ import { extractEntities, extractRelations } from "../ai";
 import type { ExtractedEntity } from "../ai";
 import { computeChangeDelta } from "./differ";
 import type { PreviousEntity } from "./differ";
+import { runRiskDetection, computeHealthScores } from "../risk";
 import {
   upsertDocument,
   insertChunks,
@@ -349,11 +350,34 @@ export async function runFullIndex(
     console.warn("[index] Change detection failed:", err instanceof Error ? err.message : err);
   }
 
-  // Create index snapshot with change delta
+  // Phase 3: Risk detection
+  progress("risk", 0, 1, "Running risk detection...");
+  let riskResult: Record<string, unknown> | undefined;
+  try {
+    const result = await runRiskDetection();
+    riskResult = result as unknown as Record<string, unknown>;
+    console.log(`[index] Risk detection: ${result.risks_detected} risks found in ${result.duration_ms}ms`);
+    progress("risk", 1, 1, `Found ${result.risks_detected} risks`);
+  } catch (err) {
+    console.warn("[index] Risk detection failed:", err instanceof Error ? err.message : err);
+  }
+
+  // Phase 3: Compute health scores
+  let healthScores: Record<string, unknown> | undefined;
+  try {
+    const scores = computeHealthScores();
+    healthScores = scores as unknown as Record<string, unknown>;
+    console.log(`[index] Health scores: overall=${scores.overall_score}, domains=${scores.domains.length}`);
+  } catch (err) {
+    console.warn("[index] Health score computation failed:", err instanceof Error ? err.message : err);
+  }
+
+  // Create index snapshot with change delta and health scores
   try {
     const entityStats = getEntityStats();
     createIndexSnapshot({
       entity_summary: entityStats,
+      health_scores: healthScores,
       change_delta: changeDelta,
     });
   } catch (err) {

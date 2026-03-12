@@ -1,17 +1,19 @@
 import { NextRequest } from "next/server";
 import {
   getEntityStats,
-  getEntities,
   getLatestSnapshot,
   getRecentSnapshots,
 } from "@/lib/storage";
 import { getDb } from "@/lib/storage/db";
+import { computeHealthScores } from "@/lib/risk";
+import type { HealthScoreResult } from "@/lib/risk";
 
 interface DomainSummary {
   domain: string;
   total: number;
   open: number;
   blocked: number;
+  health_score: number | null;
   recent_change: {
     content: string;
     change_category: string;
@@ -21,7 +23,7 @@ interface DomainSummary {
 
 /**
  * GET /api/dashboard/summary — Single aggregation endpoint for the dashboard.
- * Returns health score, entity counters with trends, domain summaries, and attention queue.
+ * Returns weighted health score, entity counters with trends, domain summaries, and attention queue.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -31,22 +33,40 @@ export async function GET(request: NextRequest) {
     const recentSnapshots = getRecentSnapshots(2);
     const previousSnapshot = recentSnapshots.length > 1 ? recentSnapshots[1] : null;
 
-    // --- Health Score ---
-    const totalEntities = entityStats.total;
-    const resolvedCount = entityStats.byStatus["resolved"] ?? 0;
-    const healthScore = totalEntities > 0
-      ? Math.round((resolvedCount / totalEntities) * 100)
-      : 0;
+    // --- Weighted Health Score ---
+    let healthResult: HealthScoreResult;
+    try {
+      healthResult = computeHealthScores();
+    } catch {
+      // Fallback if health computation fails
+      healthResult = {
+        overall_score: 0,
+        domains: [],
+        factors: {
+          gap_resolution: 0,
+          dependency_coverage: 0,
+          decision_freshness: 0,
+          ownership_distribution: 0,
+        },
+      };
+    }
 
     // Previous health score for trend
     let previousHealthScore: number | null = null;
-    if (previousSnapshot?.entity_summary) {
+    if (previousSnapshot?.health_scores) {
+      try {
+        const prev = JSON.parse(previousSnapshot.health_scores);
+        previousHealthScore = prev.overall_score ?? null;
+      } catch { /* ignore */ }
+    }
+    // Fallback: try old-style calculation from entity_summary
+    if (previousHealthScore === null && previousSnapshot?.entity_summary) {
       try {
         const prevSummary = JSON.parse(previousSnapshot.entity_summary);
         const prevTotal = prevSummary.total ?? 0;
         const prevResolved = prevSummary.byStatus?.resolved ?? 0;
         previousHealthScore = prevTotal > 0 ? Math.round((prevResolved / prevTotal) * 100) : 0;
-      } catch { /* ignore parse errors */ }
+      } catch { /* ignore */ }
     }
 
     // --- Entity Counters with Trends ---
@@ -81,7 +101,7 @@ export async function GET(request: NextRequest) {
       "SELECT COUNT(*) as count FROM entities WHERE entity_type = 'gap' AND status = 'open'"
     ).get() as { count: number }).count;
 
-    // --- Domain Summaries ---
+    // --- Domain Summaries with Health Scores ---
     const domainRows = db.prepare(
       `SELECT domain, COUNT(*) as total,
               SUM(CASE WHEN status IN ('open', 'blocked') THEN 1 ELSE 0 END) as open_count,
@@ -91,6 +111,12 @@ export async function GET(request: NextRequest) {
        GROUP BY domain
        ORDER BY total DESC`
     ).all() as Array<{ domain: string; total: number; open_count: number; blocked_count: number }>;
+
+    // Build domain health lookup
+    const domainHealthMap = new Map<string, number>();
+    for (const dh of healthResult.domains) {
+      domainHealthMap.set(dh.domain, dh.score);
+    }
 
     // Parse change delta for recent changes per domain
     let changeDeltaChanges: Array<{
@@ -115,6 +141,7 @@ export async function GET(request: NextRequest) {
         total: row.total,
         open: row.open_count,
         blocked: row.blocked_count,
+        health_score: domainHealthMap.get(row.domain) ?? null,
         recent_change: domainChange
           ? {
               content: domainChange.content,
@@ -130,72 +157,62 @@ export async function GET(request: NextRequest) {
       .filter((c) => c.change_category !== "unchanged")
       .slice(0, 20);
 
-    // --- Attention Queue ---
-    // 1. Dependencies with no owner (high severity)
-    const unownedDeps = db.prepare(
-      `SELECT e.id, e.entity_type, e.content, e.domain, e.status
-       FROM entities e
-       WHERE e.entity_type = 'dependency' AND e.owner IS NULL
-       ORDER BY e.first_seen_at DESC
-       LIMIT 10`
-    ).all() as Array<{ id: number; entity_type: string; content: string; domain: string; status: string }>;
+    // --- Attention Queue (from risk_items) ---
+    const topRisks = db.prepare(
+      `SELECT ri.id, ri.risk_type, ri.severity, ri.description, ri.detected_at, ri.entity_id,
+              COALESCE(e.domain, '') as domain
+       FROM risk_items ri
+       LEFT JOIN entities e ON ri.entity_id = e.id
+       WHERE ri.resolved_at IS NULL AND ri.dismissed_at IS NULL
+       ORDER BY CASE ri.severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 END,
+                ri.detected_at ASC
+       LIMIT 5`
+    ).all() as Array<{ id: number; risk_type: string; severity: string; description: string; detected_at: string; entity_id: number | null; domain: string }>;
 
-    // 2. Open gaps older than 14 days (medium severity)
-    const staleGaps = db.prepare(
-      `SELECT e.id, e.entity_type, e.content, e.domain, e.status, e.first_seen_at
-       FROM entities e
-       WHERE e.entity_type = 'gap'
-         AND e.status = 'open'
-         AND e.first_seen_at <= datetime('now', '-14 days')
-       ORDER BY e.first_seen_at ASC
-       LIMIT 10`
-    ).all() as Array<{ id: number; entity_type: string; content: string; domain: string; status: string; first_seen_at: string }>;
+    const attentionQueue = topRisks.map((r) => ({
+      id: r.id,
+      risk_type: r.risk_type,
+      severity: r.severity as "critical" | "high" | "medium" | "low",
+      description: r.description,
+      domain: r.domain,
+      detected_at: r.detected_at,
+    }));
 
-    const attentionQueue = [
-      ...unownedDeps.map((d) => ({
-        id: d.id,
-        entity_type: d.entity_type,
-        content: d.content,
-        domain: d.domain,
-        severity: "high" as const,
-        reason: "No owner assigned",
-      })),
-      ...staleGaps.map((g) => ({
-        id: g.id,
-        entity_type: g.entity_type,
-        content: g.content,
-        domain: g.domain,
-        severity: "medium" as const,
-        reason: `Open for ${Math.floor((Date.now() - new Date(g.first_seen_at).getTime()) / 86400000)} days`,
-      })),
-    ];
+    // Critical risk count for nav badge
+    const criticalCount = (db.prepare(
+      "SELECT COUNT(*) as count FROM risk_items WHERE severity = 'critical' AND resolved_at IS NULL AND dismissed_at IS NULL"
+    ).get() as { count: number }).count;
+
+    const totalActiveRisks = (db.prepare(
+      "SELECT COUNT(*) as count FROM risk_items WHERE resolved_at IS NULL AND dismissed_at IS NULL"
+    ).get() as { count: number }).count;
 
     // --- Last Indexed ---
     const lastIndexedAt = latestSnapshot?.created_at ?? null;
+    const totalEntities = entityStats.total;
 
-    return new Response(
-      JSON.stringify({
-        health_score: healthScore,
-        previous_health_score: previousHealthScore,
-        entity_counts: currentCounts,
-        previous_entity_counts: previousCounts,
-        open_gaps: openGaps,
-        total_entities: totalEntities,
-        domain_summaries: domainSummaries,
-        recent_changes: recentChanges,
-        attention_queue: attentionQueue,
-        last_indexed_at: lastIndexedAt,
-        has_entities: totalEntities > 0,
-      }),
-      { headers: { "Content-Type": "application/json" } }
-    );
+    return Response.json({
+      health_score: healthResult.overall_score,
+      health_factors: healthResult.factors,
+      health_domains: healthResult.domains,
+      previous_health_score: previousHealthScore,
+      entity_counts: currentCounts,
+      previous_entity_counts: previousCounts,
+      open_gaps: openGaps,
+      total_entities: totalEntities,
+      domain_summaries: domainSummaries,
+      recent_changes: recentChanges,
+      attention_queue: attentionQueue,
+      critical_risk_count: criticalCount,
+      total_active_risks: totalActiveRisks,
+      last_indexed_at: lastIndexedAt,
+      has_entities: totalEntities > 0,
+    });
   } catch (error) {
     console.error("[dashboard/summary] Error:", error);
-    return new Response(
-      JSON.stringify({
-        error: error instanceof Error ? error.message : String(error),
-      }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
+    return Response.json(
+      { error: error instanceof Error ? error.message : String(error) },
+      { status: 500 }
     );
   }
 }
