@@ -49,9 +49,11 @@ async function mistralChat(prompt: string, systemPrompt?: string): Promise<strin
   const model = process.env.MISTRAL_MODEL ?? "mistral-small-latest";
 
   const messages: Array<{ role: string; content: string }> = [];
-  if (systemPrompt) {
-    messages.push({ role: "system", content: systemPrompt });
-  }
+  // Mistral JSON mode requires an explicit system instruction to respond with JSON
+  const jsonSystemPrompt = systemPrompt
+    ? `${systemPrompt}\n\nYou must respond with valid JSON only. No other text.`
+    : "You must respond with valid JSON only. No other text.";
+  messages.push({ role: "system", content: jsonSystemPrompt });
   messages.push({ role: "user", content: prompt });
 
   const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
@@ -264,7 +266,10 @@ export async function extractEntitiesBatch(
     .map((c, i) => ({ ...c, originalIndex: i }))
     .filter((c) => c.tokenEstimate >= MIN_CHUNK_TOKENS);
 
-  if (eligible.length === 0) return result;
+  if (eligible.length === 0) {
+    console.log(`[extractor] No eligible chunks (all < ${MIN_CHUNK_TOKENS} tokens) out of ${chunks.length} total`);
+    return result;
+  }
 
   const defaultBatch = isMistralEnabled() ? "10" : "4";
   const defaultConcurrency = isMistralEnabled() ? "4" : "2";
@@ -293,6 +298,7 @@ export async function extractEntitiesBatch(
 
       const parsed = parseLooseJson<{ entities?: unknown[] }>(response);
       if (!parsed || !Array.isArray(parsed.entities)) {
+        console.warn(`[extractor] Failed to parse batch response for chunks ${batch.map((c) => c.originalIndex).join(",")}: ${response.substring(0, 200)}`);
         return;
       }
 
@@ -331,6 +337,7 @@ export async function extractEntitiesBatch(
     }
 
     chunksProcessed += batch.length;
+    console.log(`[extractor] Batch complete: ${batch.length} chunks -> ${Array.from(result.values()).flat().length} entities so far`);
     onBatchComplete?.(chunksProcessed, eligible.length);
   }
 

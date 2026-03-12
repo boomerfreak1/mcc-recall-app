@@ -410,7 +410,7 @@ function IndexingProgressBar({ progress }: { progress: { phase: string; current:
       </div>
       <div style={{
         height: "8px",
-        background: "var(--cds-border-subtle)",
+        background: "var(--cds-border-subtle, #e0e0e0)",
         borderRadius: "4px",
         overflow: "hidden",
         marginBottom: "0.375rem",
@@ -418,7 +418,7 @@ function IndexingProgressBar({ progress }: { progress: { phase: string; current:
         <div style={{
           height: "100%",
           width: `${pct}%`,
-          background: "var(--cds-interactive)",
+          background: "var(--cds-interactive, #0f62fe)",
           borderRadius: "4px",
           transition: "width 0.5s ease",
           minWidth: pct > 0 ? "4px" : "0",
