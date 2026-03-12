@@ -449,6 +449,7 @@ export default function DashboardPage() {
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [password, setPassword] = useState("");
   const [passwordError, setPasswordError] = useState(false);
+  const [indexForce, setIndexForce] = useState(false);
 
   const fetchSummary = async () => {
     setLoading(true);
@@ -489,12 +490,14 @@ export default function DashboardPage() {
     poll();
   };
 
-  const triggerIndex = async () => {
+  const triggerIndex = async (force = false) => {
     setIndexing(true);
     setIndexResult(null);
-    setIndexProgress({ phase: "start", current: 0, total: 1, message: "Starting indexing..." });
+    const modeLabel = force ? "full re-index" : "incremental index";
+    setIndexProgress({ phase: "start", current: 0, total: 1, message: `Starting ${modeLabel}...` });
     try {
-      const res = await fetch("/api/index", { method: "POST" });
+      const url = force ? "/api/index?force=true" : "/api/index";
+      const res = await fetch(url, { method: "POST" });
       const data = await res.json();
       if (data.started) {
         setTimeout(pollIndexStatus, 2000);
@@ -627,25 +630,41 @@ export default function DashboardPage() {
                     <IndexingProgressBar progress={indexProgress ?? { phase: "start", current: 0, total: 1, message: "Starting..." }} />
                   </div>
                 ) : (
-                  <Button
-                    kind="primary"
-                    renderIcon={CloudUpload}
-                    onClick={() => {
-                      setPassword("");
-                      setPasswordError(false);
-                      setShowPasswordModal(true);
-                    }}
-                  >
-                    Index Now
-                  </Button>
+                  <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center" }}>
+                    <Button
+                      kind="primary"
+                      renderIcon={Renew}
+                      onClick={() => {
+                        setIndexForce(true);
+                        setPassword("");
+                        setPasswordError(false);
+                        setShowPasswordModal(true);
+                      }}
+                    >
+                      Force Re-Index
+                    </Button>
+                    <Button
+                      kind="tertiary"
+                      renderIcon={CloudUpload}
+                      onClick={() => {
+                        setIndexForce(false);
+                        setPassword("");
+                        setPasswordError(false);
+                        setShowPasswordModal(true);
+                      }}
+                    >
+                      Index New Files Only
+                    </Button>
+                  </div>
                 )}
                 {indexResult && (
                   <div style={{
                     marginTop: "1rem",
                     padding: "0.75rem",
                     fontSize: "0.875rem",
-                    background: indexResult.success ? "var(--cds-support-success)" : "var(--cds-support-error)",
-                    color: "#fff",
+                    background: indexResult.success ? "var(--cds-notification-background-success, #defbe6)" : "var(--cds-notification-background-error, #fff1f1)",
+                    borderLeft: `3px solid ${indexResult.success ? "var(--cds-support-success)" : "var(--cds-support-error)"}`,
+                    color: "var(--cds-text-primary)",
                     textAlign: "left",
                   }}>
                     {indexResult.success ? (
@@ -654,7 +673,7 @@ export default function DashboardPage() {
                         {indexResult.documentsProcessed} documents, {indexResult.chunksCreated} chunks in {indexResult.duration}
                       </>
                     ) : (
-                      <>Error: {indexResult.error}</>
+                      <><strong style={{ color: "var(--cds-support-error)" }}>Error:</strong> {indexResult.error}</>
                     )}
                   </div>
                 )}
@@ -946,25 +965,60 @@ export default function DashboardPage() {
                     <HeatMap size={24} />
                     <span style={{ fontSize: "0.875rem", fontWeight: 600 }}>Heatmap</span>
                   </ClickableTile>
-                  <Tile style={{ flex: "1 1 220px", display: "flex", alignItems: "center", gap: "0.75rem", padding: "1rem" }}>
+                  <Tile style={{ flex: "1 1 320px", display: "flex", flexDirection: "column", alignItems: "center", gap: "0.5rem", padding: "1rem" }}>
                     {indexing ? (
                       <div style={{ width: "100%" }}>
                         <IndexingProgressBar progress={indexProgress ?? { phase: "start", current: 0, total: 1, message: "Starting..." }} />
                       </div>
                     ) : (
-                      <Button
-                        kind="ghost"
-                        size="sm"
-                        renderIcon={CloudUpload}
-                        onClick={() => {
-                          setPassword("");
-                          setPasswordError(false);
-                          setShowPasswordModal(true);
-                        }}
-                        style={{ width: "100%" }}
-                      >
-                        Index Now
-                      </Button>
+                      <div style={{ display: "flex", gap: "0.5rem", width: "100%" }}>
+                        <Button
+                          kind="ghost"
+                          size="sm"
+                          renderIcon={Renew}
+                          onClick={() => {
+                            setIndexForce(true);
+                            setPassword("");
+                            setPasswordError(false);
+                            setShowPasswordModal(true);
+                          }}
+                          style={{ flex: 1 }}
+                        >
+                          Force Re-Index
+                        </Button>
+                        <Button
+                          kind="ghost"
+                          size="sm"
+                          renderIcon={CloudUpload}
+                          onClick={() => {
+                            setIndexForce(false);
+                            setPassword("");
+                            setPasswordError(false);
+                            setShowPasswordModal(true);
+                          }}
+                          style={{ flex: 1 }}
+                        >
+                          New Files Only
+                        </Button>
+                      </div>
+                    )}
+                    {indexResult && !indexing && (
+                      <div style={{
+                        width: "100%",
+                        padding: "0.5rem 0.75rem",
+                        fontSize: "0.75rem",
+                        background: indexResult.success ? "var(--cds-notification-background-success, #defbe6)" : "var(--cds-notification-background-error, #fff1f1)",
+                        borderLeft: `3px solid ${indexResult.success ? "var(--cds-support-success)" : "var(--cds-support-error)"}`,
+                        color: "var(--cds-text-primary)",
+                      }}>
+                        {indexResult.success ? (
+                          <>
+                            <strong>Done.</strong> {indexResult.documentsProcessed} docs, {indexResult.chunksCreated} chunks in {indexResult.duration}
+                          </>
+                        ) : (
+                          <><strong style={{ color: "var(--cds-support-error)" }}>Error:</strong> {indexResult.error}</>
+                        )}
+                      </div>
                     )}
                   </Tile>
                 </div>
@@ -997,18 +1051,20 @@ export default function DashboardPage() {
             setShowPasswordModal(false);
             setPassword("");
             setPasswordError(false);
-            triggerIndex();
+            triggerIndex(indexForce);
           } else {
             setPasswordError(true);
           }
         }}
         modalHeading="Admin Authorization"
-        primaryButtonText="Start Indexing"
+        primaryButtonText={indexForce ? "Force Re-Index" : "Index New Files"}
         secondaryButtonText="Cancel"
         size="sm"
       >
         <p style={{ fontSize: "0.875rem", color: "var(--cds-text-secondary)", marginBottom: "1rem" }}>
-          Re-indexing will pull documents from GitHub, extract entities, run risk detection, and compute health scores. Enter the admin password to continue.
+          {indexForce
+            ? "Force re-index will clear all existing data and reprocess all files from GitHub. This takes longer but ensures a clean state."
+            : "Incremental index will only process new or changed files, skipping unchanged documents. Much faster for small updates."}
         </p>
         <TextInput
           id="index-password"
@@ -1029,7 +1085,7 @@ export default function DashboardPage() {
                 setShowPasswordModal(false);
                 setPassword("");
                 setPasswordError(false);
-                triggerIndex();
+                triggerIndex(indexForce);
               } else {
                 setPasswordError(true);
               }

@@ -13,6 +13,7 @@ import {
   insertChunks,
   deleteChunksByDocumentId,
   getDocumentByPath,
+  getAllDocuments,
   getStats,
   clearAll,
   addChunks as addVectorChunks,
@@ -21,6 +22,7 @@ import {
   insertEntities,
   insertEntityRelations,
   deleteEntitiesByDocumentId,
+  deleteDocument,
   createIndexSnapshot,
   getEntityStats,
   getEntitiesWithDocumentPath,
@@ -97,7 +99,8 @@ function inferDomain(filePath: string): string {
  * Pulls all supported files from GitHub, parses, chunks, embeds, and stores.
  */
 export async function runFullIndex(
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
+  options?: { force?: boolean }
 ): Promise<IndexResult> {
   const startTime = Date.now();
   const errors: Array<{ file: string; error: string }> = [];
@@ -124,35 +127,109 @@ export async function runFullIndex(
     `Found ${supportedFiles.length} supported files out of ${allFiles.length} total`
   );
 
-  // Step 2: Capture previous entities for change detection, then clear
-  progress("prepare", 0, 1, "Capturing previous entity snapshot...");
+  const forceFullReindex = options?.force ?? false;
+
+  // Step 2: Determine which files need processing
+  progress("prepare", 0, 1, "Comparing files against existing index...");
   let previousEntities: PreviousEntity[] = [];
-  try {
-    const prevWithDocs = getEntitiesWithDocumentPath();
-    previousEntities = prevWithDocs.map((e) => ({
-      id: e.id,
-      entity_type: e.entity_type,
-      content: e.content,
-      status: e.status,
-      owner: e.owner,
-      domain: e.domain,
-      document_path: e.document_path,
-    }));
-    if (previousEntities.length > 0) {
-      console.log(`[index] Captured ${previousEntities.length} previous entities for change detection`);
+
+  if (forceFullReindex) {
+    // Force mode: capture previous entities, then wipe everything
+    try {
+      const prevWithDocs = getEntitiesWithDocumentPath();
+      previousEntities = prevWithDocs.map((e) => ({
+        id: e.id,
+        entity_type: e.entity_type,
+        content: e.content,
+        status: e.status,
+        owner: e.owner,
+        domain: e.domain,
+        document_path: e.document_path,
+      }));
+      if (previousEntities.length > 0) {
+        console.log(`[index] Captured ${previousEntities.length} previous entities for change detection`);
+      }
+    } catch (err) {
+      console.warn("[index] Failed to capture previous entities:", err instanceof Error ? err.message : err);
     }
-  } catch (err) {
-    console.warn("[index] Failed to capture previous entities:", err instanceof Error ? err.message : err);
+
+    progress("prepare", 0, 1, "Force mode: clearing existing index...");
+    clearAll();
+    await resetCollection();
+    progress("prepare", 1, 1, "Index cleared");
   }
 
-  progress("prepare", 0, 1, "Clearing existing index...");
-  clearAll();
-  await resetCollection();
-  progress("prepare", 1, 1, "Index cleared");
+  // SHA-based incremental: determine which files changed
+  const githubPaths = new Set(supportedFiles.map((f) => f.path));
+  const existingDocs = forceFullReindex ? [] : getAllDocuments();
+  const existingByPath = new Map(existingDocs.map((d) => [d.path, d]));
+
+  // Files to process: new or changed SHA
+  const filesToProcess = supportedFiles.filter((f) => {
+    if (forceFullReindex) return true;
+    const existing = existingByPath.get(f.path);
+    if (!existing) return true; // new file
+    return existing.sha !== f.sha; // SHA changed
+  });
+
+  // Files removed from GitHub: delete their data
+  if (!forceFullReindex) {
+    const removedDocs = existingDocs.filter((d) => !githubPaths.has(d.path));
+    for (const doc of removedDocs) {
+      console.log(`[index] Removing deleted file: ${doc.path}`);
+      deleteEntitiesByDocumentId(doc.id);
+      deleteChunksByDocumentId(doc.id);
+      await deleteDocumentChunks(doc.path);
+      deleteDocument(doc.path);
+    }
+
+    // Capture previous entities only for files being reprocessed
+    if (filesToProcess.length > 0) {
+      try {
+        const prevWithDocs = getEntitiesWithDocumentPath();
+        const reprocessPaths = new Set(filesToProcess.map((f) => f.path));
+        previousEntities = prevWithDocs
+          .filter((e) => reprocessPaths.has(e.document_path))
+          .map((e) => ({
+            id: e.id,
+            entity_type: e.entity_type,
+            content: e.content,
+            status: e.status,
+            owner: e.owner,
+            domain: e.domain,
+            document_path: e.document_path,
+          }));
+        if (previousEntities.length > 0) {
+          console.log(`[index] Captured ${previousEntities.length} previous entities from changed files`);
+        }
+      } catch (err) {
+        console.warn("[index] Failed to capture previous entities:", err instanceof Error ? err.message : err);
+      }
+
+      // Clean old data for files being reprocessed
+      for (const file of filesToProcess) {
+        const existing = existingByPath.get(file.path);
+        if (existing) {
+          deleteEntitiesByDocumentId(existing.id);
+          deleteChunksByDocumentId(existing.id);
+          await deleteDocumentChunks(existing.path);
+        }
+      }
+    }
+  }
+
+  const skippedCount = supportedFiles.length - filesToProcess.length;
+  console.log(`[index] ${filesToProcess.length} files to process, ${skippedCount} unchanged (skipped)`);
+  progress(
+    "prepare",
+    1,
+    1,
+    `${filesToProcess.length} files to process, ${skippedCount} unchanged`
+  );
 
   const embedder = getEmbeddingProvider();
 
-  // Step 3 — Phase 1: Fetch, parse, chunk, embed all files (fast)
+  // Step 3 — Phase 1: Fetch, parse, chunk, embed changed files
   interface ParsedFile {
     file: typeof supportedFiles[0];
     chunks: Chunk[];
@@ -162,12 +239,12 @@ export async function runFullIndex(
   const parsedFiles: ParsedFile[] = [];
   let totalEligibleChunks = 0;
 
-  for (let i = 0; i < supportedFiles.length; i++) {
-    const file = supportedFiles[i];
+  for (let i = 0; i < filesToProcess.length; i++) {
+    const file = filesToProcess[i];
     progress(
       "parse",
       i,
-      supportedFiles.length,
+      filesToProcess.length,
       `Parsing & embedding: ${file.path.split("/").pop()}`
     );
 
@@ -213,7 +290,7 @@ export async function runFullIndex(
       progress(
         "embed",
         i,
-        supportedFiles.length,
+        filesToProcess.length,
         `Embedding ${chunks.length} chunks from ${file.path.split("/").pop()}`
       );
 
@@ -240,7 +317,7 @@ export async function runFullIndex(
         }))
       );
 
-      const eligible = chunks.filter((c) => c.tokenEstimate >= 50).length;
+      const eligible = chunks.filter((c) => c.tokenEstimate >= 80).length;
       totalEligibleChunks += eligible;
       parsedFiles.push({ file, chunks, docRow, domain });
       chunksCreated += chunks.length;
@@ -272,7 +349,7 @@ export async function runFullIndex(
       });
 
       // Count eligible chunks in this file for the global counter
-      const eligibleInFile = pf.chunks.filter((c) => c.tokenEstimate >= 50).length;
+      const eligibleInFile = pf.chunks.filter((c) => c.tokenEstimate >= 80).length;
       chunksExtracted += eligibleInFile;
 
       for (const [chunkIdx, entities] of batchResults) {
@@ -298,8 +375,8 @@ export async function runFullIndex(
       console.warn(`[index] Batch entity extraction failed for ${pf.file.path}:`, err instanceof Error ? err.message : err);
     }
 
-    // Relation extraction per document
-    if (allDocEntities.length >= 2) {
+    // Relation extraction per document (skip tiny entity sets to save LLM calls)
+    if (allDocEntities.length >= 5) {
       try {
         const entityList = allDocEntities.map((e) => e.entity);
         const relations = await extractRelations(entityList);
@@ -402,11 +479,12 @@ export async function runFullIndex(
 
   const duration = Date.now() - startTime;
   const entityStats = getEntityStats();
+  const skippedMsg = skippedCount > 0 ? `, ${skippedCount} skipped (unchanged)` : "";
   progress(
     "done",
     supportedFiles.length,
     supportedFiles.length,
-    `Indexed ${documentsProcessed} documents, ${chunksCreated} chunks, ${entityStats.total} entities in ${(duration / 1000).toFixed(1)}s`
+    `Indexed ${documentsProcessed} documents, ${chunksCreated} chunks, ${entityStats.total} entities in ${(duration / 1000).toFixed(1)}s${skippedMsg}`
   );
 
   return { documentsProcessed, chunksCreated, errors, duration };

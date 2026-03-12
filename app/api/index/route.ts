@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { runFullIndex } from "@/lib/indexing";
 
 /**
@@ -25,16 +25,31 @@ let indexingState: {
 };
 
 /**
- * POST /api/index — Trigger full indexing pipeline in the background.
- * Returns immediately with { started: true } and the client polls GET /api/index for status.
+ * POST /api/index — Trigger indexing pipeline in the background.
+ * By default, incremental (skips unchanged files). Pass { "force": true } in body
+ * or ?force=true query param for a full re-index.
  */
-export async function POST() {
+export async function POST(request: NextRequest) {
   if (indexingState.running) {
     return NextResponse.json(
       { started: false, error: "Indexing already in progress", progress: indexingState.progress },
       { status: 409 }
     );
   }
+
+  // Determine force mode from query param or request body
+  let force = request.nextUrl.searchParams.get("force") === "true";
+  if (!force) {
+    try {
+      const body = await request.json();
+      if (body?.force === true) force = true;
+    } catch {
+      // No body or invalid JSON — that's fine, default to incremental
+    }
+  }
+
+  const mode = force ? "full (forced)" : "incremental";
+  console.log(`[index] Starting ${mode} indexing`);
 
   // Reset state and start background indexing
   indexingState = {
@@ -50,7 +65,7 @@ export async function POST() {
     console.log(
       `[index] ${progress.phase} (${progress.current}/${progress.total}): ${progress.message}`
     );
-  })
+  }, { force })
     .then((result) => {
       indexingState.running = false;
       indexingState.result = {

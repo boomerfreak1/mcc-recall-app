@@ -48,7 +48,8 @@ async function ollamaChat(prompt: string, systemPrompt?: string): Promise<string
       stream: false,
       options: {
         temperature: 0.1,
-        num_predict: 1024,
+        num_predict: parseInt(process.env.OLLAMA_NUM_PREDICT ?? "512", 10),
+        num_ctx: parseInt(process.env.OLLAMA_NUM_CTX ?? "2048", 10),
       },
     }),
   });
@@ -180,7 +181,7 @@ export async function extractEntities(chunkContent: string): Promise<ExtractedEn
  * Minimum token count for a chunk to be worth extracting entities from.
  * Chunks below this are typically headers, separators, or TOC entries.
  */
-const MIN_CHUNK_TOKENS = 50;
+const MIN_CHUNK_TOKENS = 80;
 
 /**
  * Extract entities from multiple chunks in a single LLM call.
@@ -200,13 +201,21 @@ export async function extractEntitiesBatch(
 
   if (eligible.length === 0) return result;
 
-  // Batch into groups of 3-4 chunks
-  const BATCH_SIZE = 3;
-  let chunksProcessed = 0;
-  for (let b = 0; b < eligible.length; b += BATCH_SIZE) {
-    const batch = eligible.slice(b, b + BATCH_SIZE);
+  const BATCH_SIZE = parseInt(process.env.EXTRACTION_BATCH_SIZE ?? "4", 10);
+  const CONCURRENCY = parseInt(process.env.EXTRACTION_CONCURRENCY ?? "2", 10);
 
-    // Build combined prompt with chunk markers
+  // Build all batches upfront
+  const batches: Array<typeof eligible> = [];
+  for (let b = 0; b < eligible.length; b += BATCH_SIZE) {
+    batches.push(eligible.slice(b, b + BATCH_SIZE));
+  }
+
+  let chunksProcessed = 0;
+
+  /**
+   * Process a single batch: call Ollama and attribute entities to chunks.
+   */
+  async function processBatch(batch: typeof eligible): Promise<void> {
     const combinedText = batch
       .map((c, j) => `--- CHUNK ${j + 1} ---\n${c.content}`)
       .join("\n\n");
@@ -217,8 +226,7 @@ export async function extractEntitiesBatch(
 
       const parsed = parseLooseJson<{ entities?: unknown[] }>(response);
       if (!parsed || !Array.isArray(parsed.entities)) {
-        // Fallback: attribute all to first chunk in batch
-        continue;
+        return;
       }
 
       const entities: ExtractedEntity[] = [];
@@ -228,12 +236,10 @@ export async function extractEntitiesBatch(
         if (validated) entities.push(validated);
       }
 
-      // Distribute entities across batch chunks by best content match,
-      // or spread evenly if we can't determine attribution
+      // Distribute entities across batch chunks by best content match
       if (batch.length === 1) {
         result.set(batch[0].originalIndex, entities);
       } else {
-        // Simple attribution: check which chunk's content the entity references
         for (const chunk of batch) {
           result.set(chunk.originalIndex, []);
         }
@@ -241,7 +247,6 @@ export async function extractEntitiesBatch(
           let bestIdx = batch[0].originalIndex;
           let bestScore = 0;
           for (const chunk of batch) {
-            // Count how many words from the entity appear in the chunk
             const words = entity.content.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
             const chunkLower = chunk.content.toLowerCase();
             const matches = words.filter((w) => chunkLower.includes(w)).length;
@@ -261,6 +266,18 @@ export async function extractEntitiesBatch(
     chunksProcessed += batch.length;
     onBatchComplete?.(chunksProcessed, eligible.length);
   }
+
+  // Bounded-concurrency worker pool
+  let nextBatch = 0;
+  async function worker(): Promise<void> {
+    while (nextBatch < batches.length) {
+      const idx = nextBatch++;
+      await processBatch(batches[idx]);
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(CONCURRENCY, batches.length) }, () => worker());
+  await Promise.all(workers);
 
   return result;
 }
