@@ -152,18 +152,26 @@ export async function runFullIndex(
 
   const embedder = getEmbeddingProvider();
 
-  // Step 3: Process each file
+  // Step 3 — Phase 1: Fetch, parse, chunk, embed all files (fast)
+  interface ParsedFile {
+    file: typeof supportedFiles[0];
+    chunks: Chunk[];
+    docRow: ReturnType<typeof upsertDocument>;
+    domain: string;
+  }
+  const parsedFiles: ParsedFile[] = [];
+  let totalEligibleChunks = 0;
+
   for (let i = 0; i < supportedFiles.length; i++) {
     const file = supportedFiles[i];
     progress(
-      "process",
+      "parse",
       i,
       supportedFiles.length,
-      `Processing: ${file.path}`
+      `Parsing & embedding: ${file.path.split("/").pop()}`
     );
 
     try {
-      // Fetch file content from GitHub
       const rawUrl = `https://raw.githubusercontent.com/${process.env.GITHUB_REPO}/main/${file.path}`;
       const response = await fetch(rawUrl, {
         headers: {
@@ -176,15 +184,10 @@ export async function runFullIndex(
       }
 
       const buffer = Buffer.from(await response.arrayBuffer());
-
-      // Parse
       const parsed = await parseDocument(buffer, file.path);
-
-      // Chunk
       const chunks = chunkDocument(parsed);
-
-      // Store document in SQLite
       const domain = inferDomain(file.path);
+
       const docRow = upsertDocument({
         path: file.path,
         title: parsed.title,
@@ -195,7 +198,6 @@ export async function runFullIndex(
         chunk_count: chunks.length,
       });
 
-      // Store chunks in SQLite
       insertChunks(
         chunks.map((c) => ({
           id: c.id,
@@ -208,12 +210,11 @@ export async function runFullIndex(
         }))
       );
 
-      // Generate embeddings and store in ChromaDB
       progress(
         "embed",
         i,
         supportedFiles.length,
-        `Embedding ${chunks.length} chunks from ${file.path}`
+        `Embedding ${chunks.length} chunks from ${file.path.split("/").pop()}`
       );
 
       const embeddings = await embedder.generateEmbeddings(
@@ -239,93 +240,103 @@ export async function runFullIndex(
         }))
       );
 
-      // Phase 2: Batched entity extraction (3 chunks per LLM call, skip tiny chunks)
-      const eligibleChunks = chunks.filter((c) => c.tokenEstimate >= 50);
-      const batchCount = Math.ceil(eligibleChunks.length / 3);
-      progress(
-        "extract",
-        i,
-        supportedFiles.length,
-        `Extracting entities from ${eligibleChunks.length} chunks (${batchCount} batches) in ${file.path}`
-      );
-
-      const allDocEntities: Array<{ entity: ExtractedEntity; chunkId: string }> = [];
-
-      try {
-        const batchInput = chunks.map((c) => ({ content: c.content, tokenEstimate: c.tokenEstimate }));
-        const batchResults = await extractEntitiesBatch(batchInput);
-
-        for (const [chunkIdx, entities] of batchResults) {
-          if (entities.length > 0 && chunkIdx < chunks.length) {
-            const chunk = chunks[chunkIdx];
-            const storedEntities = insertEntities(
-              entities.map((e) => ({
-                chunk_id: chunk.id,
-                entity_type: e.entity_type,
-                content: e.content,
-                status: e.status,
-                owner: e.owner,
-                domain,
-                confidence: e.confidence,
-              }))
-            );
-            for (let k = 0; k < entities.length; k++) {
-              allDocEntities.push({ entity: entities[k], chunkId: storedEntities[k]?.chunk_id ?? chunk.id });
-            }
-          }
-        }
-      } catch (err) {
-        console.warn(`[index] Batch entity extraction failed for ${file.path}:`, err instanceof Error ? err.message : err);
-      }
-
-      // Phase 2: Relation extraction per document
-      if (allDocEntities.length >= 2) {
-        try {
-          const entityList = allDocEntities.map((e) => e.entity);
-          const relations = await extractRelations(entityList);
-
-          if (relations.length > 0) {
-            // We need entity DB IDs — query them back
-            const db = (await import("../storage/db")).getDb();
-            const docEntityRows = db
-              .prepare(
-                `SELECT e.id, e.content FROM entities e
-                 JOIN chunks c ON e.chunk_id = c.id
-                 WHERE c.document_id = ?
-                 ORDER BY e.id`
-              )
-              .all(docRow.id) as Array<{ id: number; content: string }>;
-
-            if (docEntityRows.length >= 2) {
-              const validRelations = relations
-                .filter(
-                  (r) =>
-                    r.source_index < docEntityRows.length &&
-                    r.target_index < docEntityRows.length
-                )
-                .map((r) => ({
-                  source_entity_id: docEntityRows[r.source_index].id,
-                  target_entity_id: docEntityRows[r.target_index].id,
-                  relation_type: r.relation_type,
-                  confidence: r.confidence,
-                }));
-
-              if (validRelations.length > 0) {
-                insertEntityRelations(validRelations);
-              }
-            }
-          }
-        } catch (err) {
-          console.warn(`[index] Relation extraction failed for ${file.path}:`, err instanceof Error ? err.message : err);
-        }
-      }
-
-      documentsProcessed++;
+      const eligible = chunks.filter((c) => c.tokenEstimate >= 50).length;
+      totalEligibleChunks += eligible;
+      parsedFiles.push({ file, chunks, docRow, domain });
       chunksCreated += chunks.length;
+      documentsProcessed++;
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       console.error(`[index] Error processing ${file.path}:`, msg);
       errors.push({ file: file.path, error: msg });
+    }
+  }
+
+  // Step 4 — Phase 2: Entity extraction with chunk-level progress
+  let chunksExtracted = 0;
+  progress("extract", 0, totalEligibleChunks, `Extracting entities: 0/${totalEligibleChunks} chunks`);
+
+  for (const pf of parsedFiles) {
+    const allDocEntities: Array<{ entity: ExtractedEntity; chunkId: string }> = [];
+
+    try {
+      const batchInput = pf.chunks.map((c) => ({ content: c.content, tokenEstimate: c.tokenEstimate }));
+      const batchResults = await extractEntitiesBatch(batchInput, (processed, _total) => {
+        const globalProcessed = chunksExtracted + processed;
+        progress(
+          "extract",
+          globalProcessed,
+          totalEligibleChunks,
+          `Extracting entities: ${globalProcessed}/${totalEligibleChunks} chunks (${pf.file.path.split("/").pop()})`
+        );
+      });
+
+      // Count eligible chunks in this file for the global counter
+      const eligibleInFile = pf.chunks.filter((c) => c.tokenEstimate >= 50).length;
+      chunksExtracted += eligibleInFile;
+
+      for (const [chunkIdx, entities] of batchResults) {
+        if (entities.length > 0 && chunkIdx < pf.chunks.length) {
+          const chunk = pf.chunks[chunkIdx];
+          const storedEntities = insertEntities(
+            entities.map((e) => ({
+              chunk_id: chunk.id,
+              entity_type: e.entity_type,
+              content: e.content,
+              status: e.status,
+              owner: e.owner,
+              domain: pf.domain,
+              confidence: e.confidence,
+            }))
+          );
+          for (let k = 0; k < entities.length; k++) {
+            allDocEntities.push({ entity: entities[k], chunkId: storedEntities[k]?.chunk_id ?? chunk.id });
+          }
+        }
+      }
+    } catch (err) {
+      console.warn(`[index] Batch entity extraction failed for ${pf.file.path}:`, err instanceof Error ? err.message : err);
+    }
+
+    // Relation extraction per document
+    if (allDocEntities.length >= 2) {
+      try {
+        const entityList = allDocEntities.map((e) => e.entity);
+        const relations = await extractRelations(entityList);
+
+        if (relations.length > 0) {
+          const db = (await import("../storage/db")).getDb();
+          const docEntityRows = db
+            .prepare(
+              `SELECT e.id, e.content FROM entities e
+               JOIN chunks c ON e.chunk_id = c.id
+               WHERE c.document_id = ?
+               ORDER BY e.id`
+            )
+            .all(pf.docRow.id) as Array<{ id: number; content: string }>;
+
+          if (docEntityRows.length >= 2) {
+            const validRelations = relations
+              .filter(
+                (r) =>
+                  r.source_index < docEntityRows.length &&
+                  r.target_index < docEntityRows.length
+              )
+              .map((r) => ({
+                source_entity_id: docEntityRows[r.source_index].id,
+                target_entity_id: docEntityRows[r.target_index].id,
+                relation_type: r.relation_type,
+                confidence: r.confidence,
+              }));
+
+            if (validRelations.length > 0) {
+              insertEntityRelations(validRelations);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(`[index] Relation extraction failed for ${pf.file.path}:`, err instanceof Error ? err.message : err);
+      }
     }
   }
 

@@ -188,7 +188,8 @@ const MIN_CHUNK_TOKENS = 50;
  * Returns a map of chunkIndex -> entities.
  */
 export async function extractEntitiesBatch(
-  chunks: Array<{ content: string; tokenEstimate: number }>
+  chunks: Array<{ content: string; tokenEstimate: number }>,
+  onBatchComplete?: (chunksProcessed: number, totalEligible: number) => void
 ): Promise<Map<number, ExtractedEntity[]>> {
   const result = new Map<number, ExtractedEntity[]>();
 
@@ -201,6 +202,7 @@ export async function extractEntitiesBatch(
 
   // Batch into groups of 3-4 chunks
   const BATCH_SIZE = 3;
+  let chunksProcessed = 0;
   for (let b = 0; b < eligible.length; b += BATCH_SIZE) {
     const batch = eligible.slice(b, b + BATCH_SIZE);
 
@@ -255,6 +257,9 @@ export async function extractEntitiesBatch(
     } catch (error) {
       console.warn(`[extractor] Batch extraction failed for chunks ${batch.map((c) => c.originalIndex).join(",")}: ${error instanceof Error ? error.message : error}`);
     }
+
+    chunksProcessed += batch.length;
+    onBatchComplete?.(chunksProcessed, eligible.length);
   }
 
   return result;

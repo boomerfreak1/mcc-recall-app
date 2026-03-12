@@ -385,7 +385,7 @@ function DomainHealthBadge({ score }: { score: number | null }) {
 const PHASE_LABELS: Record<string, string> = {
   fetch: "Fetching files",
   prepare: "Preparing",
-  process: "Processing documents",
+  parse: "Parsing & embedding",
   embed: "Embedding chunks",
   extract: "Extracting entities",
   detect: "Change detection",
