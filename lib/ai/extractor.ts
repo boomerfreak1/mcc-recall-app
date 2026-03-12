@@ -48,7 +48,7 @@ async function ollamaChat(prompt: string, systemPrompt?: string): Promise<string
       stream: false,
       options: {
         temperature: 0.1,
-        num_predict: 2048,
+        num_predict: 1024,
       },
     }),
   });
@@ -174,6 +174,90 @@ export async function extractEntities(chunkContent: string): Promise<ExtractedEn
     console.error("[extractor] Entity extraction failed:", error instanceof Error ? error.message : error);
     return [];
   }
+}
+
+/**
+ * Minimum token count for a chunk to be worth extracting entities from.
+ * Chunks below this are typically headers, separators, or TOC entries.
+ */
+const MIN_CHUNK_TOKENS = 50;
+
+/**
+ * Extract entities from multiple chunks in a single LLM call.
+ * Chunks are separated by markers so entities can be attributed back.
+ * Returns a map of chunkIndex -> entities.
+ */
+export async function extractEntitiesBatch(
+  chunks: Array<{ content: string; tokenEstimate: number }>
+): Promise<Map<number, ExtractedEntity[]>> {
+  const result = new Map<number, ExtractedEntity[]>();
+
+  // Filter out tiny chunks
+  const eligible = chunks
+    .map((c, i) => ({ ...c, originalIndex: i }))
+    .filter((c) => c.tokenEstimate >= MIN_CHUNK_TOKENS);
+
+  if (eligible.length === 0) return result;
+
+  // Batch into groups of 3-4 chunks
+  const BATCH_SIZE = 3;
+  for (let b = 0; b < eligible.length; b += BATCH_SIZE) {
+    const batch = eligible.slice(b, b + BATCH_SIZE);
+
+    // Build combined prompt with chunk markers
+    const combinedText = batch
+      .map((c, j) => `--- CHUNK ${j + 1} ---\n${c.content}`)
+      .join("\n\n");
+
+    try {
+      const prompt = ENTITY_EXTRACTION_PROMPT + combinedText;
+      const response = await ollamaChat(prompt);
+
+      const parsed = parseLooseJson<{ entities?: unknown[] }>(response);
+      if (!parsed || !Array.isArray(parsed.entities)) {
+        // Fallback: attribute all to first chunk in batch
+        continue;
+      }
+
+      const entities: ExtractedEntity[] = [];
+      for (const raw of parsed.entities) {
+        if (typeof raw !== "object" || raw === null) continue;
+        const validated = validateEntity(raw as Record<string, unknown>);
+        if (validated) entities.push(validated);
+      }
+
+      // Distribute entities across batch chunks by best content match,
+      // or spread evenly if we can't determine attribution
+      if (batch.length === 1) {
+        result.set(batch[0].originalIndex, entities);
+      } else {
+        // Simple attribution: check which chunk's content the entity references
+        for (const chunk of batch) {
+          result.set(chunk.originalIndex, []);
+        }
+        for (const entity of entities) {
+          let bestIdx = batch[0].originalIndex;
+          let bestScore = 0;
+          for (const chunk of batch) {
+            // Count how many words from the entity appear in the chunk
+            const words = entity.content.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
+            const chunkLower = chunk.content.toLowerCase();
+            const matches = words.filter((w) => chunkLower.includes(w)).length;
+            const score = words.length > 0 ? matches / words.length : 0;
+            if (score > bestScore) {
+              bestScore = score;
+              bestIdx = chunk.originalIndex;
+            }
+          }
+          result.get(bestIdx)!.push(entity);
+        }
+      }
+    } catch (error) {
+      console.warn(`[extractor] Batch extraction failed for chunks ${batch.map((c) => c.originalIndex).join(",")}: ${error instanceof Error ? error.message : error}`);
+    }
+  }
+
+  return result;
 }
 
 /**

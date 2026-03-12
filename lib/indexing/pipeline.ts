@@ -3,7 +3,7 @@ import { GitHubClient, getGitHubClient } from "../github";
 import { parseDocument, isSupported } from "../parsers";
 import { chunkDocument, Chunk } from "./chunker";
 import { getEmbeddingProvider } from "../embeddings";
-import { extractEntities, extractRelations } from "../ai";
+import { extractEntitiesBatch, extractRelations } from "../ai";
 import type { ExtractedEntity } from "../ai";
 import { computeChangeDelta } from "./differ";
 import type { PreviousEntity } from "./differ";
@@ -239,22 +239,27 @@ export async function runFullIndex(
         }))
       );
 
-      // Phase 2: Entity extraction per chunk
+      // Phase 2: Batched entity extraction (3 chunks per LLM call, skip tiny chunks)
+      const eligibleChunks = chunks.filter((c) => c.tokenEstimate >= 50);
+      const batchCount = Math.ceil(eligibleChunks.length / 3);
       progress(
         "extract",
         i,
         supportedFiles.length,
-        `Extracting entities from ${chunks.length} chunks in ${file.path}`
+        `Extracting entities from ${eligibleChunks.length} chunks (${batchCount} batches) in ${file.path}`
       );
 
       const allDocEntities: Array<{ entity: ExtractedEntity; chunkId: string }> = [];
 
-      for (const chunk of chunks) {
-        try {
-          const extracted = await extractEntities(chunk.content);
-          if (extracted.length > 0) {
+      try {
+        const batchInput = chunks.map((c) => ({ content: c.content, tokenEstimate: c.tokenEstimate }));
+        const batchResults = await extractEntitiesBatch(batchInput);
+
+        for (const [chunkIdx, entities] of batchResults) {
+          if (entities.length > 0 && chunkIdx < chunks.length) {
+            const chunk = chunks[chunkIdx];
             const storedEntities = insertEntities(
-              extracted.map((e) => ({
+              entities.map((e) => ({
                 chunk_id: chunk.id,
                 entity_type: e.entity_type,
                 content: e.content,
@@ -264,13 +269,13 @@ export async function runFullIndex(
                 confidence: e.confidence,
               }))
             );
-            for (let k = 0; k < extracted.length; k++) {
-              allDocEntities.push({ entity: extracted[k], chunkId: storedEntities[k]?.chunk_id ?? chunk.id });
+            for (let k = 0; k < entities.length; k++) {
+              allDocEntities.push({ entity: entities[k], chunkId: storedEntities[k]?.chunk_id ?? chunk.id });
             }
           }
-        } catch (err) {
-          console.warn(`[index] Entity extraction failed for chunk ${chunk.id}:`, err instanceof Error ? err.message : err);
         }
+      } catch (err) {
+        console.warn(`[index] Batch entity extraction failed for ${file.path}:`, err instanceof Error ? err.message : err);
       }
 
       // Phase 2: Relation extraction per document
@@ -483,15 +488,18 @@ export async function indexFile(
     }))
   );
 
-  // Phase 2: Entity extraction for incremental indexing
+  // Phase 2: Batched entity extraction for incremental indexing
   const allDocEntities: Array<{ entity: ExtractedEntity; chunkId: string }> = [];
 
-  for (const chunk of chunks) {
-    try {
-      const extracted = await extractEntities(chunk.content);
-      if (extracted.length > 0) {
+  try {
+    const batchInput = chunks.map((c) => ({ content: c.content, tokenEstimate: c.tokenEstimate }));
+    const batchResults = await extractEntitiesBatch(batchInput);
+
+    for (const [chunkIdx, entities] of batchResults) {
+      if (entities.length > 0 && chunkIdx < chunks.length) {
+        const chunk = chunks[chunkIdx];
         const storedEntities = insertEntities(
-          extracted.map((e) => ({
+          entities.map((e) => ({
             chunk_id: chunk.id,
             entity_type: e.entity_type,
             content: e.content,
@@ -501,13 +509,13 @@ export async function indexFile(
             confidence: e.confidence,
           }))
         );
-        for (let k = 0; k < extracted.length; k++) {
-          allDocEntities.push({ entity: extracted[k], chunkId: storedEntities[k]?.chunk_id ?? chunk.id });
+        for (let k = 0; k < entities.length; k++) {
+          allDocEntities.push({ entity: entities[k], chunkId: storedEntities[k]?.chunk_id ?? chunk.id });
         }
       }
-    } catch (err) {
-      console.warn(`[index] Entity extraction failed for chunk ${chunk.id}:`, err instanceof Error ? err.message : err);
     }
+  } catch (err) {
+    console.warn(`[index] Batch entity extraction failed for ${filePath}:`, err instanceof Error ? err.message : err);
   }
 
   if (allDocEntities.length >= 2) {

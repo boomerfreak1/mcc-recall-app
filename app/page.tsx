@@ -382,6 +382,61 @@ function DomainHealthBadge({ score }: { score: number | null }) {
   );
 }
 
+const PHASE_LABELS: Record<string, string> = {
+  fetch: "Fetching files",
+  prepare: "Preparing",
+  process: "Processing documents",
+  embed: "Embedding chunks",
+  extract: "Extracting entities",
+  detect: "Change detection",
+  risk: "Detecting risks",
+  done: "Complete",
+  start: "Starting",
+};
+
+function IndexingProgressBar({ progress }: { progress: { phase: string; current: number; total: number; message: string } }) {
+  const pct = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
+  const phaseLabel = PHASE_LABELS[progress.phase] ?? progress.phase;
+
+  return (
+    <div style={{ width: "100%" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.375rem" }}>
+        <span style={{ fontSize: "0.75rem", fontWeight: 600 }}>
+          {phaseLabel}
+        </span>
+        <span style={{ fontSize: "0.6875rem", color: "var(--cds-text-secondary)" }}>
+          {progress.current}/{progress.total} · {pct}%
+        </span>
+      </div>
+      <div style={{
+        height: "8px",
+        background: "var(--cds-border-subtle)",
+        borderRadius: "4px",
+        overflow: "hidden",
+        marginBottom: "0.375rem",
+      }}>
+        <div style={{
+          height: "100%",
+          width: `${pct}%`,
+          background: "var(--cds-interactive)",
+          borderRadius: "4px",
+          transition: "width 0.5s ease",
+          minWidth: pct > 0 ? "4px" : "0",
+        }} />
+      </div>
+      <p style={{
+        fontSize: "0.6875rem",
+        color: "var(--cds-text-secondary)",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+      }}>
+        {progress.message}
+      </p>
+    </div>
+  );
+}
+
 // --- Main Component ---
 
 export default function DashboardPage() {
@@ -389,7 +444,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [indexing, setIndexing] = useState(false);
-  const [indexProgress, setIndexProgress] = useState<string | null>(null);
+  const [indexProgress, setIndexProgress] = useState<{ phase: string; current: number; total: number; message: string } | null>(null);
   const [indexResult, setIndexResult] = useState<IndexResult | null>(null);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [password, setPassword] = useState("");
@@ -418,7 +473,7 @@ export default function DashboardPage() {
         const data = await res.json();
 
         if (data.running) {
-          setIndexProgress(data.progress?.message ?? "Processing...");
+          setIndexProgress(data.progress ?? { phase: "process", current: 0, total: 1, message: "Processing..." });
           setTimeout(poll, 3000);
         } else if (data.result) {
           setIndexing(false);
@@ -437,16 +492,14 @@ export default function DashboardPage() {
   const triggerIndex = async () => {
     setIndexing(true);
     setIndexResult(null);
-    setIndexProgress("Starting indexing...");
+    setIndexProgress({ phase: "start", current: 0, total: 1, message: "Starting indexing..." });
     try {
       const res = await fetch("/api/index", { method: "POST" });
       const data = await res.json();
       if (data.started) {
-        // Poll for completion
         setTimeout(pollIndexStatus, 2000);
       } else {
-        // Already running or error
-        setIndexProgress(data.error ?? "Indexing in progress");
+        setIndexProgress({ phase: "start", current: 0, total: 1, message: data.error ?? "Indexing in progress" });
         setTimeout(pollIndexStatus, 2000);
       }
     } catch (err) {
@@ -465,7 +518,7 @@ export default function DashboardPage() {
     fetch("/api/index").then((r) => r.json()).then((data) => {
       if (data.running) {
         setIndexing(true);
-        setIndexProgress(data.progress?.message ?? "Indexing in progress...");
+        setIndexProgress(data.progress ?? { phase: "process", current: 0, total: 1, message: "Indexing in progress..." });
         pollIndexStatus();
       }
     }).catch(() => {});
@@ -570,7 +623,9 @@ export default function DashboardPage() {
                   The dashboard requires entity data from the indexing pipeline. Run a full index to extract decisions, gaps, dependencies, stakeholders, and milestones from your MCC corpus.
                 </p>
                 {indexing ? (
-                  <InlineLoading description={indexProgress ?? "Indexing..."} />
+                  <div style={{ maxWidth: "400px", margin: "0 auto" }}>
+                    <IndexingProgressBar progress={indexProgress ?? { phase: "start", current: 0, total: 1, message: "Starting..." }} />
+                  </div>
                 ) : (
                   <Button
                     kind="primary"
@@ -891,9 +946,11 @@ export default function DashboardPage() {
                     <HeatMap size={24} />
                     <span style={{ fontSize: "0.875rem", fontWeight: 600 }}>Heatmap</span>
                   </ClickableTile>
-                  <Tile style={{ flex: "1 1 140px", display: "flex", alignItems: "center", gap: "0.75rem", padding: "1rem" }}>
+                  <Tile style={{ flex: "1 1 220px", display: "flex", alignItems: "center", gap: "0.75rem", padding: "1rem" }}>
                     {indexing ? (
-                      <InlineLoading description={indexProgress ?? "Indexing..."} />
+                      <div style={{ width: "100%" }}>
+                        <IndexingProgressBar progress={indexProgress ?? { phase: "start", current: 0, total: 1, message: "Starting..." }} />
+                      </div>
                     ) : (
                       <Button
                         kind="ghost"
