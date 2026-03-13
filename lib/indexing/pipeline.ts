@@ -83,9 +83,19 @@ export interface IndexResult {
 function inferDomain(filePath: string): string {
   const fileName = filePath.split("/").pop() ?? "";
 
-  // Try to extract domain from MCC naming convention
+  // MCC Analysis Card naming: workflows-MCC_CSR_Analysis_Cards.docx → "CSR"
   const mccMatch = fileName.match(/MCC[_\s]+(.+?)(?:_Analysis|_analysis|\.\w+$)/i);
-  if (mccMatch) return mccMatch[1].replace(/_/g, " ");
+  if (mccMatch) {
+    const raw = mccMatch[1].replace(/_/g, " ").trim();
+    // Strip "Interview - " prefix if the regex captured it
+    const stripped = raw.replace(/^Interview\s*[-–—]\s*/i, "");
+    return stripped || raw;
+  }
+
+  // Interview transcript naming: "IBMC MCC Interview - CSR.docx" → "CSR"
+  // "Interview Transcript - T&O.docx" → "T&O"
+  const interviewMatch = fileName.match(/Interview\s*(?:Transcript)?\s*[-–—]\s*(.+?)\.\w+$/i);
+  if (interviewMatch) return interviewMatch[1].trim();
 
   // Use parent folder as domain
   const parts = filePath.split("/");

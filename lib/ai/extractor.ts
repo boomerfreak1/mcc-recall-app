@@ -47,6 +47,7 @@ function logBackendOnce(): void {
 async function mistralChat(prompt: string, systemPrompt?: string): Promise<string> {
   const apiKey = process.env.MISTRAL_API_KEY!;
   const model = process.env.MISTRAL_MODEL ?? "mistral-small-latest";
+  const MAX_RETRIES = 3;
 
   const messages: Array<{ role: string; content: string }> = [];
   // Mistral JSON mode requires an explicit system instruction to respond with JSON
@@ -56,33 +57,53 @@ async function mistralChat(prompt: string, systemPrompt?: string): Promise<strin
   messages.push({ role: "system", content: jsonSystemPrompt });
   messages.push({ role: "user", content: prompt });
 
-  const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      temperature: 0.1,
-      max_tokens: 4096,
-      response_format: { type: "json_object" },
-    }),
+  const requestBody = JSON.stringify({
+    model,
+    messages,
+    temperature: 0.1,
+    max_tokens: 4096,
+    response_format: { type: "json_object" },
   });
 
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Mistral API error ${response.status}: ${body}`);
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: requestBody,
+    });
+
+    if (response.status === 429) {
+      if (attempt >= MAX_RETRIES) {
+        const body = await response.text();
+        throw new Error(`Mistral API rate limited after ${MAX_RETRIES} retries: ${body}`);
+      }
+      const retryAfter = response.headers.get("Retry-After");
+      const delayMs = retryAfter
+        ? Math.min(parseInt(retryAfter, 10) * 1000, 30000)
+        : Math.min(1000 * Math.pow(2, attempt), 8000); // 1s, 2s, 4s, 8s
+      console.warn(`[extractor] Mistral 429 rate limited — retrying in ${delayMs}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+      await new Promise((r) => setTimeout(r, delayMs));
+      continue;
+    }
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`Mistral API error ${response.status}: ${body}`);
+    }
+
+    const data = (await response.json()) as {
+      choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
+    };
+    const content = data.choices?.[0]?.message?.content ?? "";
+    const finish = data.choices?.[0]?.finish_reason ?? "unknown";
+    console.log(`[extractor] Mistral response: finish_reason=${finish}, length=${content.length}, preview=${content.substring(0, 200)}`);
+    return content;
   }
 
-  const data = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
-  };
-  const content = data.choices?.[0]?.message?.content ?? "";
-  const finish = data.choices?.[0]?.finish_reason ?? "unknown";
-  console.log(`[extractor] Mistral response: finish_reason=${finish}, length=${content.length}, preview=${content.substring(0, 200)}`);
-  return content;
+  throw new Error("Mistral API: exhausted retries");
 }
 
 /**
@@ -275,8 +296,8 @@ export async function extractEntitiesBatch(
     return result;
   }
 
-  const defaultBatch = isMistralEnabled() ? "10" : "4";
-  const defaultConcurrency = isMistralEnabled() ? "4" : "2";
+  const defaultBatch = isMistralEnabled() ? "5" : "4";
+  const defaultConcurrency = isMistralEnabled() ? "1" : "2";
   const BATCH_SIZE = parseInt(process.env.EXTRACTION_BATCH_SIZE ?? defaultBatch, 10);
   const CONCURRENCY = parseInt(process.env.EXTRACTION_CONCURRENCY ?? defaultConcurrency, 10);
 
@@ -353,6 +374,10 @@ export async function extractEntitiesBatch(
     while (nextBatch < batches.length) {
       const idx = nextBatch++;
       await processBatch(batches[idx]);
+      // Delay between batches to avoid Mistral rate limits
+      if (isMistralEnabled() && nextBatch < batches.length) {
+        await new Promise((r) => setTimeout(r, 500));
+      }
     }
   }
 
