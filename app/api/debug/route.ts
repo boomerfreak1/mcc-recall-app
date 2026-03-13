@@ -31,6 +31,7 @@ export async function GET() {
     mistral_configured: !!mistralKey,
     mistral_key_prefix: mistralKey ? mistralKey.substring(0, 8) + "..." : null,
     mistral_model: mistralModel,
+    mistral_usage: mistralKey ? "extraction + classification + chat" : "not configured (using Ollama)",
     test_extraction: extractionResult,
   });
 }

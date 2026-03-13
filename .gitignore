@@ -36,5 +36,7 @@ next-env.d.ts
 
 # data
 /data/
+!/data/gaps/
+!/data/gaps/*.xlsx
 *.db
 *.sqlite

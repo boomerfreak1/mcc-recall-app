@@ -569,6 +569,7 @@ export default function DashboardPage() {
               )}
             </span>
           </HeaderMenuItem>
+          <HeaderMenuItem href="/gaps">Gaps</HeaderMenuItem>
           <HeaderMenuItem href="/chat">Chat</HeaderMenuItem>
           <HeaderMenuItem href="/blueprints.html">Blueprints</HeaderMenuItem>
           <HeaderMenuItem href="/heatmap.html">Heatmap</HeaderMenuItem>

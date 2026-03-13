@@ -5,6 +5,7 @@
  */
 
 import { ENTITY_EXTRACTION_PROMPT, RELATION_EXTRACTION_PROMPT } from "./prompts";
+import { isMistralConfigured, mistralChat as mistralChatShared } from "./mistral";
 
 const DEFAULT_BASE_URL = "http://localhost:11434";
 
@@ -29,81 +30,38 @@ const VALID_RELATION_TYPES = new Set(["blocks", "owns", "references", "supersede
 
 /** Whether Mistral API is available for extraction. */
 function isMistralEnabled(): boolean {
-  return !!process.env.MISTRAL_API_KEY;
+  return isMistralConfigured();
 }
 
 let _loggedBackend = false;
 function logBackendOnce(): void {
   if (!_loggedBackend) {
     _loggedBackend = true;
-    const backend = isMistralEnabled() ? `Mistral API (${process.env.MISTRAL_MODEL ?? "mistral-small-latest"})` : "Ollama (local)";
+    const backend = isMistralEnabled()
+      ? `Mistral API (${process.env.MISTRAL_CHAT_MODEL ?? process.env.MISTRAL_MODEL ?? "mistral-small-latest"})`
+      : "Ollama (local)";
     console.log(`[extractor] Using ${backend} for extraction`);
   }
 }
 
 /**
  * Call Mistral API with JSON mode for clean structured output.
+ * Delegates to the shared mistral.ts helper.
  */
 async function mistralChat(prompt: string, systemPrompt?: string): Promise<string> {
-  const apiKey = process.env.MISTRAL_API_KEY!;
-  const model = process.env.MISTRAL_MODEL ?? "mistral-small-latest";
-  const MAX_RETRIES = 3;
-
-  const messages: Array<{ role: string; content: string }> = [];
-  // Mistral JSON mode requires an explicit system instruction to respond with JSON
   const jsonSystemPrompt = systemPrompt
     ? `${systemPrompt}\n\nYou must respond with valid JSON only. No other text.`
     : "You must respond with valid JSON only. No other text.";
-  messages.push({ role: "system", content: jsonSystemPrompt });
-  messages.push({ role: "user", content: prompt });
 
-  const requestBody = JSON.stringify({
-    model,
-    messages,
-    temperature: 0.1,
-    max_tokens: 4096,
-    response_format: { type: "json_object" },
-  });
-
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      },
-      body: requestBody,
-    });
-
-    if (response.status === 429) {
-      if (attempt >= MAX_RETRIES) {
-        const body = await response.text();
-        throw new Error(`Mistral API rate limited after ${MAX_RETRIES} retries: ${body}`);
-      }
-      const retryAfter = response.headers.get("Retry-After");
-      const delayMs = retryAfter
-        ? Math.min(parseInt(retryAfter, 10) * 1000, 30000)
-        : Math.min(1000 * Math.pow(2, attempt), 8000); // 1s, 2s, 4s, 8s
-      console.warn(`[extractor] Mistral 429 rate limited — retrying in ${delayMs}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
-      await new Promise((r) => setTimeout(r, delayMs));
-      continue;
-    }
-
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(`Mistral API error ${response.status}: ${body}`);
-    }
-
-    const data = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
-    };
-    const content = data.choices?.[0]?.message?.content ?? "";
-    const finish = data.choices?.[0]?.finish_reason ?? "unknown";
-    console.log(`[extractor] Mistral response: finish_reason=${finish}, length=${content.length}, preview=${content.substring(0, 200)}`);
-    return content;
-  }
-
-  throw new Error("Mistral API: exhausted retries");
+  const content = await mistralChatShared(
+    [
+      { role: "system", content: jsonSystemPrompt },
+      { role: "user", content: prompt },
+    ],
+    { temperature: 0.1, max_tokens: 4096, json_mode: true }
+  );
+  console.log(`[extractor] Mistral response: length=${content.length}, preview=${content.substring(0, 200)}`);
+  return content;
 }
 
 /**

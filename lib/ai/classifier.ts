@@ -4,6 +4,8 @@
  * and extracts relevant filters (domain, entity type, stakeholder name).
  */
 
+import { isMistralConfigured, mistralChat } from "./mistral";
+
 const DEFAULT_BASE_URL = "http://localhost:11434";
 
 export type QueryIntent = "factual" | "synthesis" | "relational" | "exploratory";
@@ -67,9 +69,45 @@ function parseLooseJson<T>(text: string): T | null {
 }
 
 /**
- * Classify a user query using the chat model via Ollama.
+ * Parse a classification response (from either Mistral or Ollama) into a ClassifiedQuery.
+ */
+function parseClassificationResponse(text: string, question: string): ClassifiedQuery | null {
+  const parsed = parseLooseJson<Record<string, unknown>>(text);
+  if (!parsed) return null;
+
+  const intent = String(parsed.intent ?? "synthesis").toLowerCase();
+  const entityType = parsed.entity_type ? String(parsed.entity_type).toLowerCase() : null;
+
+  return {
+    intent: VALID_INTENTS.has(intent) ? intent as QueryIntent : "synthesis",
+    domain: parsed.domain && typeof parsed.domain === "string" ? parsed.domain.trim() : null,
+    entity_type: entityType && VALID_ENTITY_TYPES.has(entityType) ? entityType : null,
+    stakeholder: parsed.stakeholder && typeof parsed.stakeholder === "string" ? parsed.stakeholder.trim() : null,
+    subject: parsed.subject && typeof parsed.subject === "string" ? parsed.subject.trim() : null,
+  };
+}
+
+/**
+ * Classify a user query. Tries Mistral first (if configured), then Ollama, then rule-based fallback.
  */
 export async function classifyQuery(question: string): Promise<ClassifiedQuery> {
+  // Try Mistral first
+  if (isMistralConfigured()) {
+    try {
+      console.log("[classifier] Using Mistral for classification");
+      const text = await mistralChat(
+        [{ role: "user", content: CLASSIFICATION_PROMPT + question }],
+        { temperature: 0.1, max_tokens: 256 }
+      );
+      const result = parseClassificationResponse(text, question);
+      if (result) return result;
+      console.warn("[classifier] Failed to parse Mistral classification response, trying Ollama");
+    } catch (error) {
+      console.warn("[classifier] Mistral classification failed:", error instanceof Error ? error.message : error);
+    }
+  }
+
+  // Ollama fallback
   const baseUrl = (process.env.OLLAMA_BASE_URL ?? DEFAULT_BASE_URL).replace(/\/$/, "");
   const model = process.env.OLLAMA_CHAT_MODEL ?? "llama3.2:1b";
 
@@ -88,29 +126,18 @@ export async function classifyQuery(question: string): Promise<ClassifiedQuery> 
     });
 
     if (!response.ok) {
-      console.warn(`[classifier] Ollama returned ${response.status}, falling back to synthesis`);
+      console.warn(`[classifier] Ollama returned ${response.status}, falling back to rules`);
       return fallbackClassify(question);
     }
 
     const data = (await response.json()) as { message?: { content?: string } };
     const text = data.message?.content ?? "";
 
-    const parsed = parseLooseJson<Record<string, unknown>>(text);
-    if (!parsed) {
-      console.warn("[classifier] Failed to parse classification response, using fallback");
-      return fallbackClassify(question);
-    }
+    const result = parseClassificationResponse(text, question);
+    if (result) return result;
 
-    const intent = String(parsed.intent ?? "synthesis").toLowerCase();
-    const entityType = parsed.entity_type ? String(parsed.entity_type).toLowerCase() : null;
-
-    return {
-      intent: VALID_INTENTS.has(intent) ? intent as QueryIntent : "synthesis",
-      domain: parsed.domain && typeof parsed.domain === "string" ? parsed.domain.trim() : null,
-      entity_type: entityType && VALID_ENTITY_TYPES.has(entityType) ? entityType : null,
-      stakeholder: parsed.stakeholder && typeof parsed.stakeholder === "string" ? parsed.stakeholder.trim() : null,
-      subject: parsed.subject && typeof parsed.subject === "string" ? parsed.subject.trim() : null,
-    };
+    console.warn("[classifier] Failed to parse Ollama classification response, using fallback");
+    return fallbackClassify(question);
   } catch (error) {
     console.warn("[classifier] Classification failed:", error instanceof Error ? error.message : error);
     return fallbackClassify(question);

@@ -88,6 +88,23 @@ function initSchema(db: Database.Database): void {
       change_delta TEXT
     );
 
+    -- Phase 4: Gaps Tracker table (imported from Excel)
+    CREATE TABLE IF NOT EXISTS gaps (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      domain TEXT NOT NULL,
+      workflow_name TEXT NOT NULL,
+      gap_description TEXT NOT NULL,
+      gap_type TEXT NOT NULL DEFAULT '',
+      recommended_next_step TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'open',
+      imported_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_gaps_domain ON gaps(domain);
+    CREATE INDEX IF NOT EXISTS idx_gaps_workflow ON gaps(workflow_name);
+    CREATE INDEX IF NOT EXISTS idx_gaps_status ON gaps(status);
+    CREATE INDEX IF NOT EXISTS idx_gaps_type ON gaps(gap_type);
+
     -- Phase 3: Risk Radar table
     CREATE TABLE IF NOT EXISTS risk_items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -307,7 +324,7 @@ export function getStats(): {
  */
 export function clearAll(): void {
   const db = getDb();
-  db.exec("DELETE FROM risk_items; DELETE FROM entity_relations; DELETE FROM entities; DELETE FROM chunks; DELETE FROM documents; DELETE FROM index_snapshots;");
+  db.exec("DELETE FROM risk_items; DELETE FROM entity_relations; DELETE FROM entities; DELETE FROM chunks; DELETE FROM documents; DELETE FROM index_snapshots; DELETE FROM gaps;");
 }
 
 /**
@@ -514,6 +531,20 @@ export function getChunkById(chunkId: string): ChunkRow | undefined {
   return db
     .prepare("SELECT * FROM chunks WHERE id = ?")
     .get(chunkId) as ChunkRow | undefined;
+}
+
+export function deleteEntitiesByIds(entityIds: number[]): number {
+  if (entityIds.length === 0) return 0;
+  const db = getDb();
+  const placeholders = entityIds.map(() => "?").join(",");
+  // Delete relations first
+  db.prepare(
+    `DELETE FROM entity_relations WHERE source_entity_id IN (${placeholders}) OR target_entity_id IN (${placeholders})`
+  ).run(...entityIds, ...entityIds);
+  const result = db.prepare(
+    `DELETE FROM entities WHERE id IN (${placeholders})`
+  ).run(...entityIds);
+  return result.changes;
 }
 
 export function deleteEntitiesByChunkId(chunkId: string): void {
@@ -796,4 +827,139 @@ export function getEntityStats(): {
   }
 
   return { total, byType, byStatus };
+}
+
+// --- Gaps CRUD (Phase 4) ---
+
+export interface GapRow {
+  id: number;
+  domain: string;
+  workflow_name: string;
+  gap_description: string;
+  gap_type: string;
+  recommended_next_step: string;
+  status: string;
+  imported_at: string;
+}
+
+export function clearGaps(): void {
+  const db = getDb();
+  db.exec("DELETE FROM gaps");
+}
+
+export function insertGaps(
+  gaps: Array<{
+    domain: string;
+    workflow_name: string;
+    gap_description: string;
+    gap_type: string;
+    recommended_next_step: string;
+  }>
+): void {
+  const db = getDb();
+  const insert = db.prepare(
+    `INSERT INTO gaps (domain, workflow_name, gap_description, gap_type, recommended_next_step)
+     VALUES (?, ?, ?, ?, ?)`
+  );
+
+  const insertMany = db.transaction(
+    (items: typeof gaps) => {
+      for (const gap of items) {
+        insert.run(
+          gap.domain,
+          gap.workflow_name,
+          gap.gap_description,
+          gap.gap_type,
+          gap.recommended_next_step
+        );
+      }
+    }
+  );
+
+  insertMany(gaps);
+}
+
+export function getGaps(filters?: {
+  domain?: string;
+  workflow_name?: string;
+  gap_type?: string;
+  status?: string;
+}): GapRow[] {
+  const db = getDb();
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+
+  if (filters?.domain) {
+    conditions.push("domain = ?");
+    params.push(filters.domain);
+  }
+  if (filters?.workflow_name) {
+    conditions.push("workflow_name = ?");
+    params.push(filters.workflow_name);
+  }
+  if (filters?.gap_type) {
+    conditions.push("gap_type = ?");
+    params.push(filters.gap_type);
+  }
+  if (filters?.status) {
+    conditions.push("status = ?");
+    params.push(filters.status);
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  return db
+    .prepare(`SELECT * FROM gaps ${where} ORDER BY domain, workflow_name, id`)
+    .all(...params) as GapRow[];
+}
+
+export function getGapStats(): {
+  total: number;
+  byStatus: Record<string, number>;
+  byDomain: Record<string, number>;
+  byType: Record<string, number>;
+  topWorkflows: Array<{ workflow_name: string; domain: string; count: number }>;
+  domainCount: number;
+} {
+  const db = getDb();
+  const total = (
+    db.prepare("SELECT COUNT(*) as count FROM gaps").get() as { count: number }
+  ).count;
+
+  const byStatus: Record<string, number> = {};
+  const statusRows = db
+    .prepare("SELECT status, COUNT(*) as count FROM gaps GROUP BY status")
+    .all() as Array<{ status: string; count: number }>;
+  for (const row of statusRows) {
+    byStatus[row.status] = row.count;
+  }
+
+  const byDomain: Record<string, number> = {};
+  const domainRows = db
+    .prepare("SELECT domain, COUNT(*) as count FROM gaps GROUP BY domain ORDER BY count DESC")
+    .all() as Array<{ domain: string; count: number }>;
+  for (const row of domainRows) {
+    byDomain[row.domain] = row.count;
+  }
+
+  const byType: Record<string, number> = {};
+  const typeRows = db
+    .prepare("SELECT gap_type, COUNT(*) as count FROM gaps WHERE gap_type != '' GROUP BY gap_type ORDER BY count DESC")
+    .all() as Array<{ gap_type: string; count: number }>;
+  for (const row of typeRows) {
+    byType[row.gap_type] = row.count;
+  }
+
+  const topWorkflows = db
+    .prepare(
+      "SELECT workflow_name, domain, COUNT(*) as count FROM gaps GROUP BY workflow_name, domain ORDER BY count DESC LIMIT 5"
+    )
+    .all() as Array<{ workflow_name: string; domain: string; count: number }>;
+
+  return { total, byStatus, byDomain, byType, topWorkflows, domainCount: domainRows.length };
+}
+
+export function updateGapStatus(id: number, status: string): GapRow | undefined {
+  const db = getDb();
+  db.prepare("UPDATE gaps SET status = ? WHERE id = ?").run(status, id);
+  return db.prepare("SELECT * FROM gaps WHERE id = ?").get(id) as GapRow | undefined;
 }

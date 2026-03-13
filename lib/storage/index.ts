@@ -16,6 +16,7 @@ export {
   getEntityById,
   getEntityRelations,
   getChunkById,
+  deleteEntitiesByIds,
   deleteEntitiesByChunkId,
   deleteEntitiesByDocumentId,
   createIndexSnapshot,
@@ -35,8 +36,13 @@ export {
   getActiveRiskByTypeAndEntity,
   clearRiskItems,
   getRiskStats,
+  clearGaps,
+  insertGaps,
+  getGaps,
+  getGapStats,
+  updateGapStatus,
 } from "./db";
-export type { DocumentRow, ChunkRow, EntityRow, EntityRelationRow, IndexSnapshotRow, RiskItemRow } from "./db";
+export type { DocumentRow, ChunkRow, EntityRow, EntityRelationRow, IndexSnapshotRow, RiskItemRow, GapRow } from "./db";
 export {
   addChunks,
   querySimilarChunks,

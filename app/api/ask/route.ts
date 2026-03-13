@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { classifyQuery, retrieve } from "@/lib/ai";
 import type { RetrievedEntity } from "@/lib/ai";
+import { isMistralConfigured, mistralChatStream } from "@/lib/ai/mistral";
 
 export const dynamic = "force-dynamic";
 
@@ -53,29 +54,41 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Step 3: Stream from Ollama
-    const ollamaBase = (process.env.OLLAMA_BASE_URL ?? "http://localhost:11434").replace(/\/$/, "");
-    const chatModel = process.env.OLLAMA_CHAT_MODEL ?? "llama3.2:3b";
+    // Step 3: Stream from Mistral (preferred) or Ollama (fallback)
+    const chatMessages = [
+      { role: "system", content: SYSTEM_PROMPT },
+      {
+        role: "user",
+        content: `Context from indexed project documents and extracted entities:\n\n${retrieval.context_text}\n\n---\n\nQuery type: ${classification.intent}\nQuestion: ${question}`,
+      },
+    ];
 
-    const ollamaResponse = await fetch(`${ollamaBase}/api/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: chatModel,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          {
-            role: "user",
-            content: `Context from indexed project documents and extracted entities:\n\n${retrieval.context_text}\n\n---\n\nQuery type: ${classification.intent}\nQuestion: ${question}`,
-          },
-        ],
-        stream: true,
-      }),
-    });
+    const useMistral = isMistralConfigured();
+    let llmResponse: Response;
 
-    if (!ollamaResponse.ok) {
-      const errText = await ollamaResponse.text();
-      throw new Error(`Ollama chat error (${ollamaResponse.status}): ${errText}`);
+    if (useMistral) {
+      console.log("[ask] Using Mistral for answer generation");
+      const { response } = await mistralChatStream(chatMessages);
+      llmResponse = response;
+    } else {
+      console.log("[ask] Using Ollama for answer generation");
+      const ollamaBase = (process.env.OLLAMA_BASE_URL ?? "http://localhost:11434").replace(/\/$/, "");
+      const chatModel = process.env.OLLAMA_CHAT_MODEL ?? "llama3.2:3b";
+
+      llmResponse = await fetch(`${ollamaBase}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: chatModel,
+          messages: chatMessages,
+          stream: true,
+        }),
+      });
+
+      if (!llmResponse.ok) {
+        const errText = await llmResponse.text();
+        throw new Error(`Ollama chat error (${llmResponse.status}): ${errText}`);
+      }
     }
 
     // Create a ReadableStream to pipe the response
@@ -118,9 +131,9 @@ export async function POST(request: NextRequest) {
             );
           }
 
-          // Stream text tokens from Ollama
-          const reader = ollamaResponse.body?.getReader();
-          if (!reader) throw new Error("No response body from Ollama");
+          // Stream text tokens
+          const reader = llmResponse.body?.getReader();
+          if (!reader) throw new Error("No response body from LLM");
 
           let buffer = "";
           while (true) {
@@ -133,34 +146,58 @@ export async function POST(request: NextRequest) {
 
             for (const line of lines) {
               if (!line.trim()) continue;
-              try {
-                const parsed = JSON.parse(line);
-                if (parsed.message?.content) {
-                  controller.enqueue(
-                    encoder.encode(
-                      `data: ${JSON.stringify({ type: "text", text: parsed.message.content })}\n\n`
-                    )
-                  );
-                }
-              } catch {
-                // Skip malformed JSON lines
+
+              let tokenText: string | null = null;
+
+              if (useMistral) {
+                // Mistral SSE format: "data: {...}" lines
+                const dataLine = line.startsWith("data: ") ? line.slice(6) : line;
+                if (dataLine === "[DONE]") continue;
+                try {
+                  const parsed = JSON.parse(dataLine);
+                  tokenText = parsed.choices?.[0]?.delta?.content ?? null;
+                } catch { /* skip */ }
+              } else {
+                // Ollama NDJSON format
+                try {
+                  const parsed = JSON.parse(line);
+                  tokenText = parsed.message?.content ?? null;
+                } catch { /* skip */ }
+              }
+
+              if (tokenText) {
+                controller.enqueue(
+                  encoder.encode(
+                    `data: ${JSON.stringify({ type: "text", text: tokenText })}\n\n`
+                  )
+                );
               }
             }
           }
 
           // Process remaining buffer
           if (buffer.trim()) {
-            try {
-              const parsed = JSON.parse(buffer);
-              if (parsed.message?.content) {
-                controller.enqueue(
-                  encoder.encode(
-                    `data: ${JSON.stringify({ type: "text", text: parsed.message.content })}\n\n`
-                  )
-                );
+            let tokenText: string | null = null;
+            if (useMistral) {
+              const dataLine = buffer.startsWith("data: ") ? buffer.slice(6) : buffer;
+              if (dataLine !== "[DONE]") {
+                try {
+                  const parsed = JSON.parse(dataLine);
+                  tokenText = parsed.choices?.[0]?.delta?.content ?? null;
+                } catch { /* skip */ }
               }
-            } catch {
-              // Skip
+            } else {
+              try {
+                const parsed = JSON.parse(buffer);
+                tokenText = parsed.message?.content ?? null;
+              } catch { /* skip */ }
+            }
+            if (tokenText) {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({ type: "text", text: tokenText })}\n\n`
+                )
+              );
             }
           }
 
