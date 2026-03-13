@@ -2,6 +2,8 @@ import { getRiskItems, getRiskStats, getRecentSnapshots } from "@/lib/storage";
 import { getDb } from "@/lib/storage/db";
 import { computeHealthScores } from "@/lib/risk";
 
+export const dynamic = "force-dynamic";
+
 /**
  * GET /api/risks/summary — Aggregated risk data for the dashboard.
  * Returns: active risk counts by severity, top 5 risks for attention queue,

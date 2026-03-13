@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runFullIndex } from "@/lib/indexing";
 
+export const dynamic = "force-dynamic";
+
 /**
  * Background indexing state.
  * Stored in module scope so the status endpoint can read it.

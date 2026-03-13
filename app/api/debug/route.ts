@@ -1,6 +1,8 @@
 import { extractEntities } from "@/lib/ai";
 import { getEntityStats } from "@/lib/storage";
 
+export const dynamic = "force-dynamic";
+
 const TEST_TEXT = `Paul Ambraz described the aspirational future state: "Don't do these 52 tactics. Do these 102 tactics." The team decided to use AI-optimized tactic mix planning instead of leader-driven budget allocation. [GAP] Who owns the brand/legal clearance automation currently in POC?`;
 
 /**

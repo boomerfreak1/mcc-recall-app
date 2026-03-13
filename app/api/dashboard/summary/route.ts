@@ -8,6 +8,8 @@ import { getDb } from "@/lib/storage/db";
 import { computeHealthScores } from "@/lib/risk";
 import type { HealthScoreResult } from "@/lib/risk";
 
+export const dynamic = "force-dynamic";
+
 interface DomainSummary {
   domain: string;
   total: number;

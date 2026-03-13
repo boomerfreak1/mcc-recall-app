@@ -2,6 +2,8 @@ import { NextRequest } from "next/server";
 import { classifyQuery, retrieve } from "@/lib/ai";
 import type { RetrievedEntity } from "@/lib/ai";
 
+export const dynamic = "force-dynamic";
+
 /**
  * POST /api/ask — Smart RAG question answering endpoint.
  * Classifies the query intent, retrieves context using the appropriate strategy

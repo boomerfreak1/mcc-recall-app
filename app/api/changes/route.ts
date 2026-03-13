@@ -1,6 +1,8 @@
 import { NextRequest } from "next/server";
 import { getLatestSnapshot } from "@/lib/storage";
 
+export const dynamic = "force-dynamic";
+
 /**
  * GET /api/changes — Returns the change delta from the most recent index snapshot.
  */
