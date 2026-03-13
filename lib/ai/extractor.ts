@@ -77,9 +77,12 @@ async function mistralChat(prompt: string, systemPrompt?: string): Promise<strin
   }
 
   const data = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
+    choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
   };
-  return data.choices?.[0]?.message?.content ?? "";
+  const content = data.choices?.[0]?.message?.content ?? "";
+  const finish = data.choices?.[0]?.finish_reason ?? "unknown";
+  console.log(`[extractor] Mistral response: finish_reason=${finish}, length=${content.length}, preview=${content.substring(0, 200)}`);
+  return content;
 }
 
 /**
@@ -226,7 +229,7 @@ export async function extractEntities(chunkContent: string): Promise<ExtractedEn
 
     const parsed = parseLooseJson<{ entities?: unknown[] }>(response);
     if (!parsed || !Array.isArray(parsed.entities)) {
-      console.warn("[extractor] Failed to parse entity extraction response");
+      console.warn("[extractor] Failed to parse entity extraction response, raw:", response.substring(0, 300));
       return [];
     }
 
@@ -237,9 +240,10 @@ export async function extractEntities(chunkContent: string): Promise<ExtractedEn
       if (validated) entities.push(validated);
     }
 
+    console.log(`[extractor] Single chunk: ${entities.length} entities extracted`);
     return entities;
   } catch (error) {
-    console.error("[extractor] Entity extraction failed:", error instanceof Error ? error.message : error);
+    console.error("[extractor] Entity extraction failed:", error instanceof Error ? error.stack : error);
     return [];
   }
 }
@@ -308,6 +312,8 @@ export async function extractEntitiesBatch(
         const validated = validateEntity(raw as Record<string, unknown>);
         if (validated) entities.push(validated);
       }
+
+      console.log(`[extractor] Batch complete: ${entities.length} entities from ${batch.length} chunks (indices ${batch.map((c) => c.originalIndex).join(",")})`);
 
       // Distribute entities across batch chunks by best content match
       if (batch.length === 1) {
