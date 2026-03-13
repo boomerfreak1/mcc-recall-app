@@ -13,7 +13,12 @@ const DEFAULT_DATA_DIR = process.env.NODE_ENV === "production" ? "/data" : "./da
 
 function getExcelPath(): string {
   const dataDir = process.env.DATA_DIR ?? DEFAULT_DATA_DIR;
-  return path.join(dataDir, "gaps", "Workflows-All-Domains.xlsx");
+  const volumePath = path.join(dataDir, "gaps", "Workflows-All-Domains.xlsx");
+  if (fs.existsSync(volumePath)) return volumePath;
+  // Fallback to repo-bundled copy (Railway deploys include the repo files)
+  const repoPath = path.join(process.cwd(), "data", "gaps", "Workflows-All-Domains.xlsx");
+  if (fs.existsSync(repoPath)) return repoPath;
+  return volumePath; // return volume path for error message
 }
 
 export async function importGapsFromExcel(): Promise<{ imported: number; domains: string[] }> {

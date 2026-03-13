@@ -324,7 +324,7 @@ export function getStats(): {
  */
 export function clearAll(): void {
   const db = getDb();
-  db.exec("DELETE FROM risk_items; DELETE FROM entity_relations; DELETE FROM entities; DELETE FROM chunks; DELETE FROM documents; DELETE FROM index_snapshots; DELETE FROM gaps;");
+  db.exec("DELETE FROM risk_items; DELETE FROM entity_relations; DELETE FROM entities; DELETE FROM chunks; DELETE FROM documents; DELETE FROM index_snapshots;");
 }
 
 /**
