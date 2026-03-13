@@ -28,7 +28,8 @@ export async function importGapsFromExcel(): Promise<{ imported: number; domains
     throw new Error(`Excel file not found: ${excelPath}`);
   }
 
-  const workbook = XLSX.readFile(excelPath);
+  const buffer = fs.readFileSync(excelPath);
+  const workbook = XLSX.read(buffer, { type: "buffer" });
 
   // Find the sheet with gap data
   const sheetName = workbook.SheetNames.find((name) =>
