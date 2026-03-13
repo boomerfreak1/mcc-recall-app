@@ -705,6 +705,80 @@ export default function DashboardPage() {
           {/* --- Dashboard Content --- */}
           {!loading && hasEntities && summary && (
             <>
+              {/* Quick Nav Row */}
+              <Column lg={16} md={8} sm={4} style={{ marginBottom: "1.5rem" }}>
+                <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+                  <ClickableTile href="/chat" style={{ flex: "1 1 140px", display: "flex", alignItems: "center", gap: "0.75rem", padding: "1rem" }}>
+                    <Chat size={24} />
+                    <span style={{ fontSize: "0.875rem", fontWeight: 600 }}>Chat</span>
+                  </ClickableTile>
+                  <ClickableTile href="/blueprints.html" style={{ flex: "1 1 140px", display: "flex", alignItems: "center", gap: "0.75rem", padding: "1rem" }}>
+                    <Catalog size={24} />
+                    <span style={{ fontSize: "0.875rem", fontWeight: 600 }}>Blueprints</span>
+                  </ClickableTile>
+                  <ClickableTile href="/heatmap.html" style={{ flex: "1 1 140px", display: "flex", alignItems: "center", gap: "0.75rem", padding: "1rem" }}>
+                    <HeatMap size={24} />
+                    <span style={{ fontSize: "0.875rem", fontWeight: 600 }}>Heatmap</span>
+                  </ClickableTile>
+                  <Tile style={{ flex: "1 1 320px", display: "flex", flexDirection: "column", alignItems: "center", gap: "0.5rem", padding: "1rem" }}>
+                    {indexing ? (
+                      <div style={{ width: "100%" }}>
+                        <IndexingProgressBar progress={indexProgress ?? { phase: "start", current: 0, total: 1, message: "Starting..." }} />
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", gap: "0.5rem", width: "100%" }}>
+                        <Button
+                          kind="ghost"
+                          size="sm"
+                          renderIcon={Renew}
+                          onClick={() => {
+                            setIndexForce(true);
+                            setPassword("");
+                            setPasswordError(false);
+                            setShowPasswordModal(true);
+                          }}
+                          style={{ flex: 1 }}
+                        >
+                          Force Re-Index
+                        </Button>
+                        <Button
+                          kind="ghost"
+                          size="sm"
+                          renderIcon={CloudUpload}
+                          onClick={() => {
+                            setIndexForce(false);
+                            setPassword("");
+                            setPasswordError(false);
+                            setShowPasswordModal(true);
+                          }}
+                          style={{ flex: 1 }}
+                        >
+                          New Files Only
+                        </Button>
+                      </div>
+                    )}
+                    {indexResult && !indexing && (
+                      <div style={{
+                        width: "100%",
+                        padding: "0.5rem 0.75rem",
+                        fontSize: "0.75rem",
+                        background: indexResult.success ? "var(--cds-notification-background-success, #defbe6)" : "var(--cds-notification-background-error, #fff1f1)",
+                        borderLeft: `3px solid ${indexResult.success ? "var(--cds-support-success)" : "var(--cds-support-error)"}`,
+                        color: "var(--cds-text-primary)",
+                      }}>
+                        {indexResult.success ? (
+                          <>
+                            <strong>Done.</strong> {indexResult.documentsProcessed} docs, {indexResult.chunksCreated} chunks in {indexResult.duration}
+                          </>
+                        ) : (
+                          <><strong style={{ color: "var(--cds-support-error)" }}>Error:</strong> {indexResult.error}</>
+                        )}
+                      </div>
+                    )}
+                  </Tile>
+                </div>
+              </Column>
+
               {/* TOP ROW: Health Score + Entity Counters */}
               <Column lg={5} md={4} sm={4} style={{ marginBottom: "1.5rem" }}>
                 <Tile style={{ height: "100%" }}>
@@ -950,79 +1024,6 @@ export default function DashboardPage() {
                 </Tile>
               </Column>
 
-              {/* Quick Nav Row */}
-              <Column lg={16} md={8} sm={4} style={{ marginBottom: "1.5rem" }}>
-                <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-                  <ClickableTile href="/chat" style={{ flex: "1 1 140px", display: "flex", alignItems: "center", gap: "0.75rem", padding: "1rem" }}>
-                    <Chat size={24} />
-                    <span style={{ fontSize: "0.875rem", fontWeight: 600 }}>Chat</span>
-                  </ClickableTile>
-                  <ClickableTile href="/blueprints.html" style={{ flex: "1 1 140px", display: "flex", alignItems: "center", gap: "0.75rem", padding: "1rem" }}>
-                    <Catalog size={24} />
-                    <span style={{ fontSize: "0.875rem", fontWeight: 600 }}>Blueprints</span>
-                  </ClickableTile>
-                  <ClickableTile href="/heatmap.html" style={{ flex: "1 1 140px", display: "flex", alignItems: "center", gap: "0.75rem", padding: "1rem" }}>
-                    <HeatMap size={24} />
-                    <span style={{ fontSize: "0.875rem", fontWeight: 600 }}>Heatmap</span>
-                  </ClickableTile>
-                  <Tile style={{ flex: "1 1 320px", display: "flex", flexDirection: "column", alignItems: "center", gap: "0.5rem", padding: "1rem" }}>
-                    {indexing ? (
-                      <div style={{ width: "100%" }}>
-                        <IndexingProgressBar progress={indexProgress ?? { phase: "start", current: 0, total: 1, message: "Starting..." }} />
-                      </div>
-                    ) : (
-                      <div style={{ display: "flex", gap: "0.5rem", width: "100%" }}>
-                        <Button
-                          kind="ghost"
-                          size="sm"
-                          renderIcon={Renew}
-                          onClick={() => {
-                            setIndexForce(true);
-                            setPassword("");
-                            setPasswordError(false);
-                            setShowPasswordModal(true);
-                          }}
-                          style={{ flex: 1 }}
-                        >
-                          Force Re-Index
-                        </Button>
-                        <Button
-                          kind="ghost"
-                          size="sm"
-                          renderIcon={CloudUpload}
-                          onClick={() => {
-                            setIndexForce(false);
-                            setPassword("");
-                            setPasswordError(false);
-                            setShowPasswordModal(true);
-                          }}
-                          style={{ flex: 1 }}
-                        >
-                          New Files Only
-                        </Button>
-                      </div>
-                    )}
-                    {indexResult && !indexing && (
-                      <div style={{
-                        width: "100%",
-                        padding: "0.5rem 0.75rem",
-                        fontSize: "0.75rem",
-                        background: indexResult.success ? "var(--cds-notification-background-success, #defbe6)" : "var(--cds-notification-background-error, #fff1f1)",
-                        borderLeft: `3px solid ${indexResult.success ? "var(--cds-support-success)" : "var(--cds-support-error)"}`,
-                        color: "var(--cds-text-primary)",
-                      }}>
-                        {indexResult.success ? (
-                          <>
-                            <strong>Done.</strong> {indexResult.documentsProcessed} docs, {indexResult.chunksCreated} chunks in {indexResult.duration}
-                          </>
-                        ) : (
-                          <><strong style={{ color: "var(--cds-support-error)" }}>Error:</strong> {indexResult.error}</>
-                        )}
-                      </div>
-                    )}
-                  </Tile>
-                </div>
-              </Column>
             </>
           )}
 
