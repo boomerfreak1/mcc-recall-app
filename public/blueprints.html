@@ -154,6 +154,44 @@ ul li::before{content:'\2022';position:absolute;left:0;color:#002d9c}
 .gap-type-pill{display:inline-block;font-size:.5625rem;font-weight:600;padding:2px 8px;border-radius:10px;white-space:nowrap}
 .gap-type--summary{background:#d0e2ff;color:#002d9c}
 .gap-type--inline{background:#fff1d6;color:#8a6116}
+
+/* Cross-domain encompassed workflows section */
+.encompassed{background:#fff;border-radius:2px;box-shadow:0 1px 2px rgba(0,0,0,.06);margin-bottom:8px;overflow:hidden;opacity:0;transform:translateY(10px);transition:opacity .35s ease, transform .35s ease}
+.card-panel.visible .encompassed{opacity:1;transform:translateY(0);transition-delay:.22s}
+.encompassed-accent{height:4px;background:#002d9c}
+.encompassed-title{font-size:.71875rem;font-weight:700;padding:8px 10px 6px;color:#161616}
+.encompassed-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 18px;padding:0 10px 10px;font-size:.59375rem;line-height:1.55;color:#525252}
+.encompassed-grid .eg-hdr{font-weight:700;color:#002d9c;font-size:.625rem;margin-top:6px;margin-bottom:1px}
+.encompassed-grid .eg-hdr:first-child{margin-top:0}
+
+/* Adobe framework visual */
+.framework-section{background:#fff;border-radius:2px;box-shadow:0 1px 2px rgba(0,0,0,.06);margin-bottom:8px;overflow:hidden;opacity:0;transform:translateY(10px);transition:opacity .35s ease, transform .35s ease}
+.card-panel.visible .framework-section{opacity:1;transform:translateY(0);transition-delay:.18s}
+.framework-accent{height:4px;background:#002d9c}
+.framework-title{font-size:.71875rem;font-weight:700;padding:8px 10px 6px;color:#161616}
+.framework-subtitle{font-size:.5625rem;font-style:italic;color:#6f6f6f;padding:0 10px 4px}
+.fw-legend{display:flex;gap:12px;padding:0 10px 6px;font-size:.5625rem}
+.fw-legend-item{display:flex;align-items:center;gap:4px}
+.fw-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.fw-dot--green{background:#24a148}
+.fw-dot--yellow{background:#f1c21b}
+.fw-dot--red{background:#da1e28}
+.fw-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:0 10px 10px}
+.fw-card{border:1.5px solid #e0e0e0;border-radius:4px;padding:6px 8px;font-size:.5625rem;line-height:1.5;color:#525252}
+.fw-card-title{font-weight:700;color:#161616;font-size:.625rem;margin-bottom:3px;display:flex;align-items:center;gap:5px}
+.fw-card-title svg{flex-shrink:0}
+.fw-card ul{list-style:none;padding:0;margin:0}
+.fw-card ul li{padding-left:10px;position:relative;margin-bottom:0}
+.fw-card ul li::before{content:'';position:absolute;left:0;top:6px;width:5px;height:5px;border-radius:50%}
+.fw-card ul li.u::before{background:#24a148}
+.fw-card ul li.d::before{background:#f1c21b}
+.fw-card ul li.n::before{background:#da1e28}
+.fw-orchestrator{margin:0 10px 10px;border:2px solid #002d9c;border-radius:4px;padding:8px 10px;font-size:.5625rem}
+.fw-orch-title{font-weight:700;color:#002d9c;font-size:.625rem;margin-bottom:2px}
+.fw-orch-sub{font-size:.5rem;color:#6f6f6f;font-style:italic;margin-bottom:6px}
+.fw-orch-agents{display:flex;flex-wrap:wrap;gap:4px 16px}
+.fw-orch-agent{display:flex;align-items:center;gap:4px}
+.fw-orch-agent .fw-dot{width:5px;height:5px}
 </style>
 </head>
 <body>
@@ -11119,16 +11157,17 @@ Steve: &#x27;Eve</div>
   <div class="card-header" style="background:#002d9c">
     <div class="card-title">Adobe AI/Analytics Capabilities Assessment &amp; Activation</div>
     <div class="card-badge">Cross-domain</div>
-    <div class="card-desc">Maps AI, agentic, and advanced analytics capabilities across the Adobe martech stack against MCC’s current utilization.</div>
+    <div class="card-desc">Maps AI, agentic, and advanced analytics capabilities across the Adobe martech stack against MCC&#x27;s current utilization.</div>
     <div class="card-pill">TBD</div>
   </div>
   <div class="card-content-wrapper">
     <div class="card-body" id="card-body-62">
+      <!-- Top 4 tiles -->
       <div class="cols4">
         <div class="tile"><div class="tile-accent"></div>
           <div class="tile-title">Brief Description</div>
           <div class="tile-body">
-            <p class="narr" style="font-size:.8125rem;line-height:1.5;color:#525252;padding:8px 0">Maps AI, agentic, and advanced analytics capabilities across the Adobe martech stack against MCC’s current utilization. Produces a prioritized shortlist of high-impact, underutilized capabilities for near-term activation to deliver more personal, relevant, and proactive engagement.</p>
+            <p class="narr" style="font-size:.8125rem;line-height:1.5;color:#525252;padding:8px 0">Maps AI, agentic, and advanced analytics capabilities across the Adobe martech stack against MCC&#x27;s current utilization. Produces a prioritized shortlist of high-impact, underutilized capabilities for near-term activation to deliver more personal, relevant, and proactive engagement.</p>
             <div class="sh">Process Owners</div><ul>
               <li>TBD based on identified initiatives</li>
             </ul>
@@ -11144,34 +11183,215 @@ Steve: &#x27;Eve</div>
           </div>
         </div>
         <div class="tile"><div class="tile-accent"></div>
-          <div class="tile-title">Business Impact</div>
+          <div class="tile-title">Business Impact <span class="biz-pill" style="background:#defbe6;color:#0e6027">High</span></div>
           <div class="tile-body">
-            <p class="narr">Shifts from manual, rules-based execution to AI-driven hyper-personalization — increasing pipeline contribution from long-tail accounts that currently receive generic treatment and driving broad-ranging efficiency gains</p>
-<div class="sh">Time Savings</div><ul><li>TBD based on target initiatives, but impacts many teams including Named Accounts, Select T, PMM, MMAPI, among others</li></ul>
-<div class="sh">Future Extensions &amp; Reusability</div><ul><li>Basis for long-term agentic roadmap leveraging full capabilities of Adobe stack</li></ul>
+            <p class="narr">Shifts from manual, rules-based execution to AI-driven hyper-personalization &mdash; increasing pipeline contribution from long-tail accounts that currently receive generic treatment and driving broad-ranging efficiency gains</p>
+            <div class="sh">Time Savings</div><ul><li>TBD based on target initiatives, but impacts many teams including Named Accounts, Select T, PMM, MMAPI, among others</li></ul>
+            <div class="sh">Future Extensions &amp; Reusability</div><ul><li>Basis for long-term agentic roadmap leveraging full capabilities of Adobe stack</li></ul>
           </div>
         </div>
         <div class="tile"><div class="tile-accent"></div>
-          <div class="tile-title">Feasibility</div>
+          <div class="tile-title">Feasibility <span class="biz-pill" style="background:#defbe6;color:#0e6027">High</span></div>
           <div class="tile-body">
             <ul><li>Focus on capabilities native to existing Adobe stack</li><li>AEP Agent Orchestrator reached GA Sept 2025; IBM is a named strategic partner for customization</li><li>Activation of top priorities fits within the current 18-month program timeline and delivery team</li><li>Data foundation critical, but RevTech/AEP paving way for broader Adobe capability activation</li></ul>
           </div>
         </div>
       </div>
+      <!-- Adobe AI/Analytics Capabilities Assessment Framework -->
+      <div class="framework-section">
+        <div class="framework-accent"></div>
+        <div class="framework-title">Adobe AI/Analytics Capabilities Assessment Framework</div>
+        <div class="framework-subtitle">Demand Strategy &nbsp;|&nbsp; Partner Ecosystem &nbsp;|&nbsp; Digital Experience &nbsp;(Non-Named Accounts)</div>
+        <div class="fw-legend">
+          <div class="fw-legend-item"><span class="fw-dot fw-dot--green"></span> Utilized</div>
+          <div class="fw-legend-item"><span class="fw-dot fw-dot--yellow"></span> In development</div>
+          <div class="fw-legend-item"><span class="fw-dot fw-dot--red"></span> Not yet pursued</div>
+        </div>
+        <div class="fw-grid">
+          <div class="fw-card">
+            <div class="fw-card-title"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="#0043ce" stroke-width="1.5" fill="#edf5ff"/><path d="M5 8h6M8 5v6" stroke="#0043ce" stroke-width="1.2"/></svg> Real-Time CDP / Experience Platform</div>
+            <ul>
+              <li class="u">Unified customer profiles</li>
+              <li class="u">Real-time segmentation</li>
+              <li class="d">Predictive scoring &amp; propensity</li>
+              <li class="n">Look-alike modeling</li>
+              <li class="u">Identity resolution</li>
+              <li class="u">Consent &amp; privacy enforcement</li>
+              <li class="d">Computed / derived attributes</li>
+              <li class="d">Data governance &amp; lineage</li>
+            </ul>
+          </div>
+          <div class="fw-card">
+            <div class="fw-card-title"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="#0043ce" stroke-width="1.5" fill="#edf5ff"/><path d="M5 6l3 4 3-4" stroke="#0043ce" stroke-width="1.2"/></svg> Marketo Engage</div>
+            <ul>
+              <li class="u">AI lead &amp; account scoring</li>
+              <li class="u">Predictive nurture paths</li>
+              <li class="u">ABM audience orchestration</li>
+              <li class="d">Dynamic email personalization</li>
+              <li class="n">Salesforce bi-directional sync</li>
+              <li class="d">Revenue cycle analytics</li>
+              <li class="d">Engagement program optimization</li>
+              <li class="n">Interactive content &amp; forms</li>
+            </ul>
+          </div>
+          <div class="fw-card">
+            <div class="fw-card-title"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="#0043ce" stroke-width="1.5" fill="#edf5ff"/><path d="M4 8h8M6 5l-3 3 3 3" stroke="#0043ce" stroke-width="1.2"/></svg> Journey Optimizer</div>
+            <ul>
+              <li class="d">Cross-channel journey orchestration</li>
+              <li class="d">AI send-time optimization</li>
+              <li class="n">Next-best-action decisioning</li>
+              <li class="n">Contextual offer management</li>
+              <li class="d">Real-time event triggers</li>
+              <li class="d">Frequency &amp; fatigue capping</li>
+              <li class="n">Content experimentation</li>
+              <li class="n">Channel preference optimization</li>
+            </ul>
+          </div>
+          <div class="fw-card">
+            <div class="fw-card-title"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="#0043ce" stroke-width="1.5" fill="#edf5ff"/><circle cx="8" cy="8" r="3" fill="#0043ce"/></svg> Target</div>
+            <ul>
+              <li class="d">AI Auto-Target personalization</li>
+              <li class="d">Automated Personalization (AP)</li>
+              <li class="n">Auto-allocate testing</li>
+              <li class="n">Product / content recs</li>
+              <li class="n">Behavioral audience targeting</li>
+              <li class="n">Experience decisioning</li>
+              <li class="n">Edge decisioning (low-latency)</li>
+              <li class="n">Server-side testing &amp; delivery</li>
+            </ul>
+          </div>
+          <div class="fw-card">
+            <div class="fw-card-title"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="#0043ce" stroke-width="1.5" fill="#edf5ff"/><path d="M5 11V5h2l2 3-2 3H5z" fill="#0043ce"/></svg> Analytics / CJA / Mix Modeler</div>
+            <ul>
+              <li class="u">Cross-channel attribution (AI)</li>
+              <li class="d">Anomaly detection</li>
+              <li class="d">Contribution analysis</li>
+              <li class="n">Predictive audiences</li>
+              <li class="d">Flow &amp; fallout analysis</li>
+              <li class="n">Segment IQ comparison</li>
+              <li class="n">Intelligent alerts</li>
+              <li class="n">Media mix modeling &amp; budget opt.</li>
+            </ul>
+          </div>
+          <div class="fw-card">
+            <div class="fw-card-title"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="#0043ce" stroke-width="1.5" fill="#edf5ff"/><path d="M5 5h6v6H5z" stroke="#0043ce" stroke-width="1" fill="none"/></svg> AEM / GenStudio / Firefly</div>
+            <ul>
+              <li class="d">GenAI content generation</li>
+              <li class="n">Automated creative variations</li>
+              <li class="n">Dynamic content assembly</li>
+              <li class="d">DAM asset intelligence</li>
+              <li class="n">Headless content delivery</li>
+              <li class="d">Brand compliance &amp; guardrails</li>
+              <li class="n">Edge Delivery Services</li>
+              <li class="n">Content fragment management</li>
+            </ul>
+          </div>
+          <div class="fw-card">
+            <div class="fw-card-title"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="#0043ce" stroke-width="1.5" fill="#edf5ff"/><path d="M4 8a4 4 0 018 0" stroke="#0043ce" stroke-width="1.2"/><circle cx="8" cy="8" r="1.5" fill="#0043ce"/></svg> Audience Manager / Partner Ecosystem</div>
+            <ul>
+              <li class="u">Partner co-marketing audiences</li>
+              <li class="d">Second-party data activation</li>
+              <li class="d">Federated audience composition</li>
+              <li class="n">Consent-based data partnerships</li>
+              <li class="d">Ecosystem attribution</li>
+              <li class="d">Destination / activation mgmt</li>
+              <li class="n">Suppression &amp; exclusion lists</li>
+            </ul>
+          </div>
+          <div class="fw-card">
+            <div class="fw-card-title"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="#0043ce" stroke-width="1.5" fill="#edf5ff"/><path d="M5 5l6 6M11 5l-6 6" stroke="#0043ce" stroke-width="1.2"/></svg> Salesforce Integration Layer</div>
+            <ul>
+              <li class="u">Lead/opp sync &amp; enrichment</li>
+              <li class="d">Sales-marketing attribution</li>
+              <li class="u">Partner portal / PRM data</li>
+              <li class="n">AI-driven pipeline scoring</li>
+              <li class="d">Closed-loop reporting</li>
+              <li class="n">Account-based experience orch.</li>
+              <li class="n">Predictive content for sales</li>
+            </ul>
+          </div>
+        </div>
+        <div class="fw-orchestrator">
+          <div class="fw-orch-title">AEP Agent Orchestrator + AI Agents + Brand Concierge</div>
+          <div class="fw-orch-sub">Cross-cutting agentic AI layer &mdash; orchestrates purpose-built agents across all domains above</div>
+          <div class="fw-orch-agents">
+            <div class="fw-orch-agent"><span class="fw-dot fw-dot--green"></span> Audience Agent</div>
+            <div class="fw-orch-agent"><span class="fw-dot fw-dot--green"></span> Data Insights Agent</div>
+            <div class="fw-orch-agent"><span class="fw-dot fw-dot--yellow"></span> Journey Agent</div>
+            <div class="fw-orch-agent"><span class="fw-dot fw-dot--yellow"></span> Data Engineering Agent</div>
+            <div class="fw-orch-agent"><span class="fw-dot fw-dot--yellow"></span> Experimentation Agent</div>
+            <div class="fw-orch-agent"><span class="fw-dot fw-dot--yellow"></span> Account Qualification Agent</div>
+            <div class="fw-orch-agent"><span class="fw-dot fw-dot--yellow"></span> Site Optimization Agent</div>
+            <div class="fw-orch-agent"><span class="fw-dot fw-dot--yellow"></span> Product Advisor Agent</div>
+            <div class="fw-orch-agent"><span class="fw-dot fw-dot--yellow"></span> Content Production Agent</div>
+            <div class="fw-orch-agent"><span class="fw-dot fw-dot--yellow"></span> Workflow Optimization Agent</div>
+            <div class="fw-orch-agent"><span class="fw-dot fw-dot--red"></span> AI Assistant</div>
+            <div class="fw-orch-agent"><span class="fw-dot fw-dot--red"></span> Brand Concierge</div>
+            <div class="fw-orch-agent"><span class="fw-dot fw-dot--red"></span> 3rd-Party Agent Interop</div>
+          </div>
+        </div>
+      </div>
+      <!-- Encompassed cross-domain workflows / priorities -->
+      <div class="encompassed">
+        <div class="encompassed-accent"></div>
+        <div class="encompassed-title">Encompassed cross-domain workflows / priorities</div>
+        <div class="encompassed-grid">
+          <div>
+            <div class="eg-hdr">Named Account Marketing &ndash; Demand Strategy</div>
+            <ul>
+              <li>Growth Cohort &amp; Buying Group Orchestration</li>
+              <li>Unified Account Journey Intelligence (Account 360)</li>
+              <li>Globalization of Assets &amp; Journeys (extension of current Content work)</li>
+            </ul>
+            <div class="eg-hdr">Named Account Marketing &ndash; C-Suite + ABM</div>
+            <ul>
+              <li>Client Experience Playbook Agent</li>
+            </ul>
+            <div class="eg-hdr">Named Account Marketing - Events</div>
+            <ul>
+              <li>Attendee follow-up / NBA</li>
+            </ul>
+          </div>
+          <div>
+            <div class="eg-hdr">Select Territory Marketing &ndash; Demand Strategy</div>
+            <ul>
+              <li>Demand planning</li>
+              <li>Journey optimization including a) buyer segmentation, b) journey mapping / buyer path, 3) intent monitoring (tracking real-time revtech signals), 4) conversion and optimization</li>
+              <li>Audience including behavioral segmentation, buying group progression, expansion strategies</li>
+            </ul>
+            <div class="eg-hdr">Product Marketing</div>
+            <ul>
+              <li>Client engagement insights and actionable patterns</li>
+            </ul>
+          </div>
+          <div>
+            <div class="eg-hdr">MMAPI</div>
+            <ul>
+              <li>Attribution (esp. w/ unknown users)</li>
+              <li>Journey analytics</li>
+            </ul>
+            <div class="eg-hdr">Corporate Affairs &ndash; Analyst Relations</div>
+            <ul>
+              <li>Trigger-based activation of newly published analyst reports (extended to all just-published content incl. thought leadership, IBV research, etc.)</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <!-- Technical Requirements + KPIs -->
       <div class="bot-row">
         <div class="tile"><div class="tile-accent"></div>
           <div class="tile-title">Technical Requirements</div>
           <div class="tile-body"><div class="tech-grid">
             <div><div class="sh">Data Sources</div><ul><li>AEP, ISC (lead/opp/account data, partner portal/PRM), Datorama</li><li>Third-party intent signals (e.g., Bombora, TechTarget) where available</li><li>Content repository of latest analyst reports, thought leadership, IBV research, etc.</li></ul>
-<div class="sh">System / Integration Requirements</div><ul><li>Leveraging Salesforce integration for Sales engagement/conversion insights and, in cases, activation</li><li>AEP identity resolution and unified profile stitching across web, email, and partner touchpoints</li><li>Agent Orchestrator configuration and governance policies for human-in-the-loop controls</li></ul>
+              <div class="sh">System / Integration Requirements</div><ul><li>Leveraging Salesforce integration for Sales engagement/conversion insights and, in cases, activation</li><li>AEP identity resolution and unified profile stitching across web, email, and partner touchpoints</li><li>Agent Orchestrator configuration and governance policies for human-in-the-loop controls</li></ul>
             </div>
             <div><div class="sh">Candidate Vendors / Tools</div><ul><li>Adobe stack including AEP, CJA, AJO, MMM, Target, Marketo</li><li>AEP Agent Orchestrator + purpose-built AI Agents (Audience, Journey, Experimentation, Site Optimization, Content Production)</li><li>GenStudio / Firefly for content generation and creative variation</li></ul>
-<div class="sh">Other Dependencies &amp; Open Items</div><ul><li>HIGH: AEP and ISC data quality</li><li>MEDIUM: Consent and privacy policy alignment across partner data-sharing use cases</li></ul>
+              <div class="sh">Other Dependencies &amp; Open Items</div><ul><li>HIGH: AEP and ISC data quality</li><li>MEDIUM: Consent and privacy policy alignment across partner data-sharing use cases</li></ul>
             </div>
           </div></div>
         </div>
         <div class="tile"><div class="tile-accent"></div>
-          <div class="tile-title">KPI's</div>
+          <div class="tile-title">KPI’s</div>
           <div class="tile-body">
             <ul><li>Will be tied to individual initiatives activated, but collectively will impact cross-funnel metrics including:</li><li>MQL/SQL generation</li><li>Lead conversion to opportunity</li><li>Win rate</li><li>Campaign ops cycle time (time from brief to activation)</li><li>Content utilization rate across channels and partners</li></ul>
             <div class="impact-box">
