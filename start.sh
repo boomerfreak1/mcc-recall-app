@@ -6,6 +6,13 @@ CHROMA_PORT="${CHROMA_PORT:-8000}"
 
 echo "[start] Creating data directories..."
 mkdir -p "$DATA_DIR/chroma"
+mkdir -p "$DATA_DIR/gaps"
+
+# Seed gaps Excel from repo if not already on the volume
+if [ ! -f "$DATA_DIR/gaps/Workflows-All-Domains.xlsx" ] && [ -f /app/data/gaps/Workflows-All-Domains.xlsx ]; then
+  echo "[start] Copying gaps Excel to persistent volume..."
+  cp /app/data/gaps/Workflows-All-Domains.xlsx "$DATA_DIR/gaps/"
+fi
 
 # Start ChromaDB in the background
 echo "[start] Starting ChromaDB on port $CHROMA_PORT..."
