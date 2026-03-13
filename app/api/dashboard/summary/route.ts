@@ -1,214 +1,93 @@
 import { NextRequest } from "next/server";
-import {
-  getEntityStats,
-  getLatestSnapshot,
-  getRecentSnapshots,
-} from "@/lib/storage";
+import { getLatestSnapshot } from "@/lib/storage";
 import { getDb } from "@/lib/storage/db";
-import { computeHealthScores } from "@/lib/risk";
-import type { HealthScoreResult } from "@/lib/risk";
 
 export const dynamic = "force-dynamic";
 
-interface DomainSummary {
-  domain: string;
-  total: number;
-  open: number;
-  blocked: number;
-  health_score: number | null;
-  recent_change: {
-    content: string;
-    change_category: string;
-    entity_type: string;
-  } | null;
-}
-
 /**
- * GET /api/dashboard/summary — Single aggregation endpoint for the dashboard.
- * Returns weighted health score, entity counters with trends, domain summaries, and attention queue.
+ * GET /api/dashboard/summary — Document + gap focused dashboard API.
  */
 export async function GET(request: NextRequest) {
   try {
     const db = getDb();
-    const entityStats = getEntityStats();
-    const latestSnapshot = getLatestSnapshot();
-    const recentSnapshots = getRecentSnapshots(2);
-    const previousSnapshot = recentSnapshots.length > 1 ? recentSnapshots[1] : null;
 
-    // --- Weighted Health Score ---
-    let healthResult: HealthScoreResult;
+    // Documents
+    const documents = db.prepare(
+      "SELECT id, title, domain, format, indexed_at FROM documents ORDER BY indexed_at DESC LIMIT 10"
+    ).all() as Array<{ id: number; title: string; domain: string; format: string; indexed_at: string }>;
+
+    const documentCount = (db.prepare(
+      "SELECT COUNT(*) as count FROM documents"
+    ).get() as { count: number }).count;
+
+    const domainCount = (db.prepare(
+      "SELECT COUNT(DISTINCT domain) as count FROM documents WHERE domain != ''"
+    ).get() as { count: number }).count;
+
+    // Workflow count from gaps table
+    let workflowCount = 0;
     try {
-      healthResult = computeHealthScores();
-    } catch {
-      // Fallback if health computation fails
-      healthResult = {
-        overall_score: 0,
-        domains: [],
-        factors: {
-          gap_resolution: 0,
-          dependency_coverage: 0,
-          decision_freshness: 0,
-          ownership_distribution: 0,
-        },
-      };
-    }
+      workflowCount = (db.prepare(
+        "SELECT COUNT(DISTINCT workflow_name) as count FROM gaps"
+      ).get() as { count: number }).count;
+    } catch { /* gaps table may not exist yet */ }
 
-    // Previous health score for trend
-    let previousHealthScore: number | null = null;
-    if (previousSnapshot?.health_scores) {
-      try {
-        const prev = JSON.parse(previousSnapshot.health_scores);
-        previousHealthScore = prev.overall_score ?? null;
-      } catch { /* ignore */ }
-    }
-    // Fallback: try old-style calculation from entity_summary
-    if (previousHealthScore === null && previousSnapshot?.entity_summary) {
-      try {
-        const prevSummary = JSON.parse(previousSnapshot.entity_summary);
-        const prevTotal = prevSummary.total ?? 0;
-        const prevResolved = prevSummary.byStatus?.resolved ?? 0;
-        previousHealthScore = prevTotal > 0 ? Math.round((prevResolved / prevTotal) * 100) : 0;
-      } catch { /* ignore */ }
-    }
-
-    // --- Entity Counters with Trends ---
-    const currentCounts = {
-      decisions: entityStats.byType["decision"] ?? 0,
-      gaps: entityStats.byType["gap"] ?? 0,
-      dependencies: entityStats.byType["dependency"] ?? 0,
-      stakeholders: entityStats.byType["stakeholder"] ?? 0,
-      milestones: entityStats.byType["milestone"] ?? 0,
-      workflows: entityStats.byType["workflow"] ?? 0,
-    };
-
-    let previousCounts: Record<string, number> | null = null;
-    if (previousSnapshot?.entity_summary) {
-      try {
-        const prevSummary = JSON.parse(previousSnapshot.entity_summary);
-        if (prevSummary.byType) {
-          previousCounts = {
-            decisions: prevSummary.byType["decision"] ?? 0,
-            gaps: prevSummary.byType["gap"] ?? 0,
-            dependencies: prevSummary.byType["dependency"] ?? 0,
-            stakeholders: prevSummary.byType["stakeholder"] ?? 0,
-            milestones: prevSummary.byType["milestone"] ?? 0,
-            workflows: prevSummary.byType["workflow"] ?? 0,
-          };
-        }
-      } catch { /* ignore */ }
-    }
-
-    // --- Open Gaps Count ---
-    const openGaps = (db.prepare(
-      "SELECT COUNT(*) as count FROM entities WHERE entity_type = 'gap' AND status = 'open'"
-    ).get() as { count: number }).count;
-
-    // --- Domain Summaries with Health Scores ---
-    const domainRows = db.prepare(
-      `SELECT domain, COUNT(*) as total,
-              SUM(CASE WHEN status IN ('open', 'blocked') THEN 1 ELSE 0 END) as open_count,
-              SUM(CASE WHEN status = 'blocked' THEN 1 ELSE 0 END) as blocked_count
-       FROM entities
-       WHERE domain != ''
-       GROUP BY domain
-       ORDER BY total DESC`
-    ).all() as Array<{ domain: string; total: number; open_count: number; blocked_count: number }>;
-
-    // Build domain health lookup
-    const domainHealthMap = new Map<string, number>();
-    for (const dh of healthResult.domains) {
-      domainHealthMap.set(dh.domain, dh.score);
-    }
-
-    // Parse change delta for recent changes per domain
-    let changeDeltaChanges: Array<{
-      content: string;
-      change_category: string;
-      entity_type: string;
+    // Gap summary by domain + workflow
+    let gapSummary: Array<{
       domain: string;
+      workflows: Array<{ workflow_name: string; gap_count: number; open_count: number }>;
+      total_gaps: number;
     }> = [];
-    if (latestSnapshot?.change_delta) {
-      try {
-        const delta = JSON.parse(latestSnapshot.change_delta);
-        changeDeltaChanges = delta.changes ?? [];
-      } catch { /* ignore */ }
-    }
+    let gapTotals = { total: 0, open: 0, in_progress: 0, resolved: 0 };
 
-    const domainSummaries: DomainSummary[] = domainRows.map((row) => {
-      const domainChange = changeDeltaChanges.find(
-        (c) => c.domain === row.domain && c.change_category !== "unchanged"
-      );
-      return {
-        domain: row.domain,
-        total: row.total,
-        open: row.open_count,
-        blocked: row.blocked_count,
-        health_score: domainHealthMap.get(row.domain) ?? null,
-        recent_change: domainChange
-          ? {
-              content: domainChange.content,
-              change_category: domainChange.change_category,
-              entity_type: domainChange.entity_type,
-            }
-          : null,
-      };
-    });
+    try {
+      const gapRows = db.prepare(
+        `SELECT domain, workflow_name, COUNT(*) as gap_count,
+                SUM(CASE WHEN status='open' THEN 1 ELSE 0 END) as open_count
+         FROM gaps GROUP BY domain, workflow_name ORDER BY domain, gap_count DESC`
+      ).all() as Array<{ domain: string; workflow_name: string; gap_count: number; open_count: number }>;
 
-    // --- Recent Changes (from latest snapshot change_delta) ---
-    const recentChanges = changeDeltaChanges
-      .filter((c) => c.change_category !== "unchanged")
-      .slice(0, 20);
+      // Group by domain
+      const domainMap = new Map<string, Array<{ workflow_name: string; gap_count: number; open_count: number }>>();
+      for (const row of gapRows) {
+        if (!domainMap.has(row.domain)) domainMap.set(row.domain, []);
+        domainMap.get(row.domain)!.push({
+          workflow_name: row.workflow_name,
+          gap_count: row.gap_count,
+          open_count: row.open_count,
+        });
+      }
+      gapSummary = Array.from(domainMap.entries()).map(([domain, workflows]) => ({
+        domain,
+        workflows,
+        total_gaps: workflows.reduce((sum, w) => sum + w.gap_count, 0),
+      }));
 
-    // --- Attention Queue (from risk_items) ---
-    const topRisks = db.prepare(
-      `SELECT ri.id, ri.risk_type, ri.severity, ri.description, ri.detected_at, ri.entity_id,
-              COALESCE(e.domain, '') as domain
-       FROM risk_items ri
-       LEFT JOIN entities e ON ri.entity_id = e.id
-       WHERE ri.resolved_at IS NULL AND ri.dismissed_at IS NULL
-       ORDER BY CASE ri.severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 END,
-                ri.detected_at ASC
-       LIMIT 5`
-    ).all() as Array<{ id: number; risk_type: string; severity: string; description: string; detected_at: string; entity_id: number | null; domain: string }>;
+      // Status totals
+      const statusRows = db.prepare(
+        "SELECT status, COUNT(*) as count FROM gaps GROUP BY status"
+      ).all() as Array<{ status: string; count: number }>;
 
-    const attentionQueue = topRisks.map((r) => ({
-      id: r.id,
-      risk_type: r.risk_type,
-      severity: r.severity as "critical" | "high" | "medium" | "low",
-      description: r.description,
-      domain: r.domain,
-      detected_at: r.detected_at,
-    }));
+      for (const row of statusRows) {
+        gapTotals.total += row.count;
+        if (row.status === "open") gapTotals.open = row.count;
+        else if (row.status === "in-progress") gapTotals.in_progress = row.count;
+        else if (row.status === "resolved") gapTotals.resolved = row.count;
+      }
+    } catch { /* gaps table may not exist yet */ }
 
-    // Critical risk count for nav badge
-    const criticalCount = (db.prepare(
-      "SELECT COUNT(*) as count FROM risk_items WHERE severity = 'critical' AND resolved_at IS NULL AND dismissed_at IS NULL"
-    ).get() as { count: number }).count;
-
-    const totalActiveRisks = (db.prepare(
-      "SELECT COUNT(*) as count FROM risk_items WHERE resolved_at IS NULL AND dismissed_at IS NULL"
-    ).get() as { count: number }).count;
-
-    // --- Last Indexed ---
+    // Last indexed
+    const latestSnapshot = getLatestSnapshot();
     const lastIndexedAt = latestSnapshot?.created_at ?? null;
-    const totalEntities = entityStats.total;
 
     return Response.json({
-      health_score: healthResult.overall_score,
-      health_factors: healthResult.factors,
-      health_domains: healthResult.domains,
-      previous_health_score: previousHealthScore,
-      entity_counts: currentCounts,
-      previous_entity_counts: previousCounts,
-      open_gaps: openGaps,
-      total_entities: totalEntities,
-      domain_summaries: domainSummaries,
-      recent_changes: recentChanges,
-      attention_queue: attentionQueue,
-      critical_risk_count: criticalCount,
-      total_active_risks: totalActiveRisks,
+      documents,
+      document_count: documentCount,
+      domain_count: domainCount,
+      workflow_count: workflowCount,
+      gap_summary: gapSummary,
+      gap_totals: gapTotals,
       last_indexed_at: lastIndexedAt,
-      has_entities: totalEntities > 0,
     });
   } catch (error) {
     console.error("[dashboard/summary] Error:", error);

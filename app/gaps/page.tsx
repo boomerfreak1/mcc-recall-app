@@ -201,6 +201,7 @@ export default function GapsPage() {
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [domainFilter, setDomainFilter] = useState<string>("all");
+  const [workflowFilter, setWorkflowFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
@@ -217,7 +218,12 @@ export default function GapsPage() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("domain")) setDomainFilter(params.get("domain")!);
+    if (params.get("workflow")) setWorkflowFilter(params.get("workflow")!);
+    fetchData();
+  }, []);
 
   const handleImport = async () => {
     setImporting(true);
@@ -257,6 +263,7 @@ export default function GapsPage() {
   // Filter
   const filtered = gaps.filter((g) => {
     if (domainFilter !== "all" && g.domain !== domainFilter) return false;
+    if (workflowFilter !== "all" && g.workflow_name !== workflowFilter) return false;
     if (typeFilter !== "all" && g.gap_type !== typeFilter) return false;
     if (statusFilter !== "all" && g.status !== statusFilter) return false;
     return true;
@@ -270,7 +277,6 @@ export default function GapsPage() {
         </HeaderName>
         <HeaderNavigation aria-label="Navigation">
           <HeaderMenuItem href="/">Dashboard</HeaderMenuItem>
-          <HeaderMenuItem href="/risks">Risks</HeaderMenuItem>
           <HeaderMenuItem href="/gaps">Gaps</HeaderMenuItem>
           <HeaderMenuItem href="/chat">Chat</HeaderMenuItem>
           <HeaderMenuItem href="/blueprints.html">Blueprints</HeaderMenuItem>
