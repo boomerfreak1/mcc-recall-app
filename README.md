@@ -40,10 +40,10 @@ GitHub Docs -> Parse (5 formats) -> Chunk (structure-aware, 512 tokens)
 
 | Variable | Required | Prompted at Deploy | Description |
 |----------|----------|-------------------|-------------|
-| `ADMIN_PASSWORD` | Yes | Yes | Password for triggering indexing from the dashboard |
+| `ADMIN_PASSWORD` | Yes | Yes (auto-generated) | Password for triggering indexing from the dashboard |
 | `GITHUB_TOKEN` | Yes | Yes | GitHub personal access token with `repo` scope |
 | `GITHUB_REPO` | Yes | Yes | Repository to index (`owner/repo` format) |
-| `GITHUB_WEBHOOK_SECRET` | No | Yes | Secret for verifying GitHub webhook signatures |
+| `GITHUB_WEBHOOK_SECRET` | No | Yes (auto-generated) | Secret for verifying GitHub webhook signatures |
 | `MISTRAL_API_KEY` | No | Yes | Mistral API key for cloud-based extraction (falls back to local Ollama) |
 | `DATA_DIR` | No | No | Persistent data directory (default: `/data`) |
 | `PORT` | No | No | Server port (default: `3000`) |
@@ -56,10 +56,10 @@ Railway's persistent volumes, single-container Docker support, and automatic hea
 
 1. **Deploy from template** - Click the Railway deploy button or connect your fork in Railway
 2. **Fill in the setup form** - Railway prompts for the required variables:
-   - `ADMIN_PASSWORD` — password for triggering indexing from the dashboard
    - `GITHUB_TOKEN` — GitHub personal access token with `repo` scope ([generate one](https://github.com/settings/tokens))
    - `GITHUB_REPO` — repository to index in `owner/repo` format
-   - `GITHUB_WEBHOOK_SECRET` (optional) — for verifying GitHub push webhooks
+   - `ADMIN_PASSWORD` — auto-generated; copy it somewhere safe for dashboard login
+   - `GITHUB_WEBHOOK_SECRET` (optional) — auto-generated; copy into your GitHub webhook config
    - `MISTRAL_API_KEY` (optional) — for faster cloud-based entity extraction
 3. **Add a volume** - Mount path: `/data` (stores SQLite + ChromaDB data)
 4. **Deploy** - Railway builds the Docker image with Ollama + ChromaDB bundled

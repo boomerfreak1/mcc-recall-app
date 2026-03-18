@@ -12,12 +12,12 @@ restartPolicyMaxRetries = 3
 
 [variables]
 # Required — prompted at deploy
-ADMIN_PASSWORD = { description = "Password for triggering indexing from the dashboard. Generate a strong random value.", required = true }
+ADMIN_PASSWORD = { description = "Password for triggering indexing from the dashboard. Auto-generated if left blank.", default = "${{ secret(64, '0123456789abcdef') }}", required = true }
 GITHUB_TOKEN = { description = "GitHub personal access token with repo scope. Generate at https://github.com/settings/tokens", required = true }
 GITHUB_REPO = { description = "GitHub repository to index in owner/repo format (e.g. myorg/my-docs-repo)", required = true }
 
 # Optional — prompted at deploy
-GITHUB_WEBHOOK_SECRET = { description = "Secret for verifying GitHub webhook signatures. Generate with: openssl rand -hex 32. Leave blank to skip webhook verification.", required = false }
+GITHUB_WEBHOOK_SECRET = { description = "Secret for verifying GitHub webhook signatures. Auto-generated — copy this value into your GitHub webhook config.", default = "${{ secret(64, '0123456789abcdef') }}", required = false }
 MISTRAL_API_KEY = { description = "Mistral API key for cloud-based entity extraction (faster/better). Falls back to local Ollama if unset.", required = false }
 
 # Pre-filled defaults (not prompted, but overridable)
