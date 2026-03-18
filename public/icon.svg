@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="64" fill="#0a0a0a"/>
+  <g transform="translate(256,240)">
+    <!-- Cranium -->
+    <ellipse cx="0" cy="-20" rx="120" ry="140" fill="#e8e8e8"/>
+    <!-- Left eye socket -->
+    <ellipse cx="-45" cy="-30" rx="32" ry="36" fill="#0a0a0a"/>
+    <!-- Right eye socket -->
+    <ellipse cx="45" cy="-30" rx="32" ry="36" fill="#0a0a0a"/>
+    <!-- Left eye glow -->
+    <ellipse cx="-45" cy="-30" rx="18" ry="20" fill="#ff462e" opacity="0.9"/>
+    <!-- Right eye glow -->
+    <ellipse cx="45" cy="-30" rx="18" ry="20" fill="#ff462e" opacity="0.9"/>
+    <!-- Nose -->
+    <path d="M-12,40 L0,25 L12,40 Z" fill="#0a0a0a"/>
+    <!-- Jaw / Teeth area -->
+    <rect x="-70" y="65" width="140" height="45" rx="8" fill="#e8e8e8"/>
+    <!-- Tooth gaps -->
+    <line x1="-46" y1="65" x2="-46" y2="110" stroke="#0a0a0a" stroke-width="4"/>
+    <line x1="-22" y1="65" x2="-22" y2="110" stroke="#0a0a0a" stroke-width="4"/>
+    <line x1="2" y1="65" x2="2" y2="110" stroke="#0a0a0a" stroke-width="4"/>
+    <line x1="26" y1="65" x2="26" y2="110" stroke="#0a0a0a" stroke-width="4"/>
+    <line x1="50" y1="65" x2="50" y2="110" stroke="#0a0a0a" stroke-width="4"/>
+  </g>
+</svg>

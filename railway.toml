@@ -1,3 +1,8 @@
+[template]
+name = "Recall"
+description = "Index any GitHub repo's documents into a searchable intelligence layer with auto-extracted entities, gap tracking, and a RAG chat interface. Deploys as a single container with Ollama, ChromaDB, and SQLite — no external dependencies to manage."
+icon = "https://raw.githubusercontent.com/boomerfreak1/mcc-recall-app/main/public/icon.png"
+
 [build]
 dockerfilePath = "Dockerfile"
 
