@@ -39,14 +39,25 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Determine force mode from query param or request body
+  // Parse request body
   let force = request.nextUrl.searchParams.get("force") === "true";
-  if (!force) {
-    try {
-      const body = await request.json();
-      if (body?.force === true) force = true;
-    } catch {
-      // No body or invalid JSON — that's fine, default to incremental
+  let password: string | undefined;
+  try {
+    const body = await request.json();
+    if (body?.force === true) force = true;
+    password = body?.password;
+  } catch {
+    // No body or invalid JSON — that's fine, default to incremental
+  }
+
+  // Verify admin password (server-side)
+  const adminPassword = process.env.ADMIN_PASSWORD;
+  if (adminPassword) {
+    if (!password || password !== adminPassword) {
+      return NextResponse.json(
+        { started: false, error: "Unauthorized" },
+        { status: 401 }
+      );
     }
   }
 

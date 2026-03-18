@@ -212,14 +212,17 @@ export default function DashboardPage() {
     poll();
   };
 
-  const triggerIndex = async (force = false) => {
+  const triggerIndex = async (force = false, adminPassword?: string) => {
     setIndexing(true);
     setIndexResult(null);
     const modeLabel = force ? "full re-index" : "incremental index";
     setIndexProgress({ phase: "start", current: 0, total: 1, message: `Starting ${modeLabel}...` });
     try {
-      const url = force ? "/api/index?force=true" : "/api/index";
-      const res = await fetch(url, { method: "POST" });
+      const res = await fetch("/api/index", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force, password: adminPassword }),
+      });
       const data = await res.json();
       if (data.started) {
         setTimeout(pollIndexStatus, 2000);
@@ -619,12 +622,13 @@ export default function DashboardPage() {
       <Modal
         open={showPasswordModal}
         onRequestClose={() => setShowPasswordModal(false)}
-        onRequestSubmit={() => {
-          if (password === "42069Dwightiscool") {
+        onRequestSubmit={async () => {
+          if (password.length > 0) {
             setShowPasswordModal(false);
+            const pw = password;
             setPassword("");
             setPasswordError(false);
-            triggerIndex(indexForce);
+            triggerIndex(indexForce, pw);
           } else {
             setPasswordError(true);
           }
@@ -654,11 +658,12 @@ export default function DashboardPage() {
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();
-              if (password === "42069Dwightiscool") {
+              if (password.length > 0) {
                 setShowPasswordModal(false);
+                const pw = password;
                 setPassword("");
                 setPasswordError(false);
-                triggerIndex(indexForce);
+                triggerIndex(indexForce, pw);
               } else {
                 setPasswordError(true);
               }

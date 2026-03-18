@@ -40,3 +40,12 @@ next-env.d.ts
 !/data/gaps/*.xlsx
 *.db
 *.sqlite
+
+# editor/agent artifacts
+.agent/
+.agents/
+.claude/
+.kiro/
+.windsurf/
+public/.next/
+skills-lock.json

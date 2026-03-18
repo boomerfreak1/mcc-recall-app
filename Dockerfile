@@ -30,7 +30,7 @@ WORKDIR /app
 
 # Copy package files and install dependencies
 COPY package.json package-lock.json ./
-RUN npm cache clean --force && npm ci --production=false
+RUN npm ci --production=false
 
 # Copy source code
 COPY . .
@@ -54,5 +54,8 @@ ENV CHROMA_HOST=localhost
 ENV CHROMA_PORT=8000
 ENV OLLAMA_CHAT_MODEL=llama3.2:1b
 ENV PORT=3000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD curl -f http://localhost:3000/api/health || exit 1
 
 CMD ["/app/start.sh"]

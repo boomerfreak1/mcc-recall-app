@@ -55,16 +55,21 @@ export async function POST(request: NextRequest) {
   const event = request.headers.get("x-github-event");
   const signature = request.headers.get("x-hub-signature-256");
 
-  // Verify webhook signature if secret is configured
+  // Verify webhook signature (required for security)
   const secret = process.env.GITHUB_WEBHOOK_SECRET;
-  if (secret) {
-    if (!verifySignature(body, signature, secret)) {
-      console.warn("[webhook] Invalid signature rejected");
-      return NextResponse.json(
-        { error: "Invalid webhook signature" },
-        { status: 401 }
-      );
-    }
+  if (!secret) {
+    console.error("[webhook] GITHUB_WEBHOOK_SECRET is not set. Rejecting request.");
+    return NextResponse.json(
+      { error: "Webhook secret not configured" },
+      { status: 500 }
+    );
+  }
+  if (!verifySignature(body, signature, secret)) {
+    console.warn("[webhook] Invalid signature rejected");
+    return NextResponse.json(
+      { error: "Invalid webhook signature" },
+      { status: 401 }
+    );
   }
 
   // Handle ping event (sent when webhook is first configured)

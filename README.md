@@ -1,143 +1,65 @@
-# Recall — Project Intelligence Platform
+# Deploy and Host Recall with Railway
 
-Recall indexes a project's document corpus, extracts structured knowledge (decisions, dependencies, gaps, stakeholders, milestones), and provides a living dashboard, risk radar, and auto-generated briefings.
+Recall is a project intelligence platform that indexes workflow documents from GitHub, extracts entities with a multi-model LLM pipeline, and surfaces gaps, risks, and health scores through an interactive dashboard. Built on Next.js 14 with SQLite, ChromaDB, and local Ollama embeddings, it deploys in days as a single Docker container on Railway.
 
-## Tech Stack
+## About Hosting Recall
 
-- **Next.js 14** (App Router, TypeScript, Tailwind CSS)
-- **SQLite** (better-sqlite3) — structured data (documents, chunks, entities)
-- **ChromaDB** — vector storage for semantic search
-- **Ollama** (nomic-embed-text) — local embeddings, zero API cost
-- **Anthropic Claude** — entity extraction (Haiku) and answer generation (Sonnet)
-- **GitHub** — document repository with webhook-triggered indexing
+Recall turns a project's document corpus into a living intelligence layer. It parses DOCX, XLSX, CSV, Markdown, and PDF files, chunks them along structural boundaries, generates local embeddings via Ollama, and extracts six entity types (decisions, dependencies, gaps, stakeholders, milestones, workflows) using LLM-powered analysis. The platform provides a dashboard with domain health scores, a RAG chat interface for querying documents, automated gap tracking across domains, workflow blueprint browsing, a cross-workflow overlap heatmap, and a risk radar with six detection rules. Incremental SHA-based indexing means only changed documents are reprocessed on updates.
 
-## Railway Deployment
+## Common Use Cases
 
-### 1. Create a new Railway project
+- **Project Discovery Intelligence**: Index interview transcripts and workflow analysis documents to surface gaps, entities, and relationships automatically
+- **Gap Tracking at Scale**: Track hundreds of discovery gaps across multiple domains with automated staleness detection and risk escalation
+- **Document-Grounded Q&A**: Ask natural language questions about your project corpus with cited, source-grounded answers via RAG chat
+- **Cross-Workflow Analysis**: Generate overlap heatmaps to identify shared capabilities and consolidation opportunities across workflows
+- **Stakeholder Readiness Dashboards**: Quantify project readiness with composite health scores based on gap resolution, dependency coverage, decision freshness, and ownership distribution
 
-1. Go to [railway.app](https://railway.app) and create a new project
-2. Select "Deploy from GitHub repo" and connect `boomerfreak1/mcc-recall-app`
-3. Railway will detect the Dockerfile and build automatically
+## Dependencies for Recall Hosting
 
-### 2. Add a persistent volume
+### Deployment Dependencies
 
-1. In your Railway service, go to **Settings → Volumes**
-2. Click **Add Volume**
-3. Mount path: `/data`
-4. This stores the SQLite database and ChromaDB data across deploys
+- **[Node.js 20](https://nodejs.org/)** - Runtime for Next.js application server
+- **[Ollama](https://ollama.com/)** - Local LLM inference for embeddings (nomic-embed-text) and chat (llama3.2:1b), bundled in Docker image
+- **[ChromaDB](https://www.trychroma.com/)** - Vector database for semantic search over document chunks, bundled in Docker image
+- **[SQLite](https://www.sqlite.org/)** via [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) - Relational storage for entities, documents, gaps, and risk items
 
-### 3. Set environment variables
+### Implementation Details
 
-In **Settings → Variables**, add:
+All three services (Next.js, Ollama, ChromaDB) run inside a single Docker container orchestrated by `start.sh`. The startup script waits for Ollama and ChromaDB to become healthy before launching the Next.js server.
 
-| Variable | Value |
-|----------|-------|
-| `GITHUB_TOKEN` | Your GitHub personal access token (repo scope) |
-| `GITHUB_REPO` | `boomerfreak1/mcc-recall-app` |
-| `GITHUB_WEBHOOK_SECRET` | A random string for webhook verification |
-| `ANTHROPIC_API_KEY` | Your Anthropic API key |
-| `DATA_DIR` | `/data` |
-| `PORT` | `3000` |
-
-The following have defaults and don't need to be set unless you're customizing:
-- `EMBEDDING_PROVIDER` (default: `ollama`)
-- `OLLAMA_BASE_URL` (default: `http://localhost:11434`)
-- `CHROMA_HOST` (default: `localhost`)
-- `CHROMA_PORT` (default: `8000`)
-
-### 4. Deploy
-
-Railway will build the Docker image (installs Ollama + nomic-embed-text model + ChromaDB), then start all services via the `start.sh` script.
-
-### 5. Set up the GitHub webhook
-
-1. Go to your GitHub repo → **Settings → Webhooks → Add webhook**
-2. Payload URL: `https://<your-railway-domain>/api/webhooks/github`
-3. Content type: `application/json`
-4. Secret: Same value as `GITHUB_WEBHOOK_SECRET` in Railway
-5. Events: Select **"Just the push event"**
-
-### 6. Initial index
-
-After deploy, open your Railway app URL and click **"Index Now"** to run the first full index. Subsequent pushes to the repo will trigger incremental re-indexing automatically via the webhook.
-
-## Local Development
-
-### Prerequisites
-
-- Node.js 18+
-- [Ollama](https://ollama.com) installed locally
-- [ChromaDB](https://docs.trychroma.com) server
-
-### 1. Install Ollama and pull the embedding model
-
-```bash
-# Install Ollama (macOS)
-brew install ollama
-
-# Start Ollama (in a separate terminal)
-ollama serve
-
-# Pull the embedding model (~300MB)
-ollama pull nomic-embed-text
+**Indexing pipeline:**
+```
+GitHub Docs -> Parse (5 formats) -> Chunk (structure-aware, 512 tokens)
+  -> Embed (nomic-embed-text, 768-dim) -> Extract (6 entity types via LLM)
+  -> Store (SQLite + ChromaDB) -> Serve (Next.js API + UI)
 ```
 
-### 2. Install and start ChromaDB
+**Health check endpoint:** `GET /api/health` returns status for all services (server, ollama, sqlite, chromadb, github, chatModel) plus index statistics.
 
-```bash
-# Install via pip
-pip install chromadb
+**Environment variables:**
 
-# Start ChromaDB server (in a separate terminal)
-chroma run --path ./data/chroma
-```
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `GITHUB_TOKEN` | Yes | GitHub personal access token with repo scope |
+| `GITHUB_REPO` | Yes | Repository to index (owner/repo format) |
+| `ADMIN_PASSWORD` | Yes | Password for triggering indexing from the dashboard |
+| `GITHUB_WEBHOOK_SECRET` | Recommended | Secret for verifying GitHub webhook signatures |
+| `MISTRAL_API_KEY` | No | Mistral API key for cloud-based extraction (falls back to local Ollama) |
+| `DATA_DIR` | No | Persistent data directory (default: `/data`) |
+| `PORT` | No | Server port (default: `3000`) |
 
-### 3. Clone and install
+### Why Deploy Recall on Railway?
 
-```bash
-git clone https://github.com/boomerfreak1/mcc-recall-app.git
-cd mcc-recall-app
-npm install
-```
+Railway's persistent volumes, single-container Docker support, and automatic health checks make it ideal for Recall's architecture. The `/data` volume preserves the SQLite database and ChromaDB vector store across deploys, so reindexing is only needed when documents change. Railway's built-in domain provisioning and environment variable management eliminate the need for separate infrastructure for secrets, DNS, and TLS. The entire platform runs as one service with no external database dependencies to manage.
 
-### 4. Configure environment
+## Quick Start
 
-```bash
-cp .env.example .env
-```
-
-Edit `.env` with your values (see Railway variables table above). For local dev, set `DATA_DIR=./data`.
-
-### 5. Run the dev server
-
-```bash
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) to see the health check dashboard. Click **"Index Now"** to index your documents, then navigate to `/chat` to ask questions.
-
-## Project Structure
-
-```
-app/                    # Next.js App Router routes
-  api/
-    ask/                # POST /api/ask — RAG question answering (streamed)
-    health/             # GET /api/health — service health checks (JSON booleans)
-    index/              # POST /api/index — trigger full indexing pipeline
-    webhooks/github/    # POST /api/webhooks/github — verified push event handler
-  chat/                 # Chat UI for Q&A
-components/ui/          # shadcn/ui components (button, card, input, dialog)
-lib/
-  github/               # GitHub API client
-  embeddings/           # Embedding provider interface (Ollama)
-  parsers/              # Document parsers (.docx, .xlsx, .csv, .md, .pdf)
-  indexing/             # Chunking engine + indexing pipeline
-  storage/              # SQLite (db.ts) + ChromaDB (vectorstore.ts)
-  ai/                   # Anthropic API wrappers (TODO)
-scripts/                # Test and utility scripts
-Dockerfile              # Single-container build (Node.js + Ollama + ChromaDB)
-start.sh                # Startup script: launches Ollama, ChromaDB, then Next.js
-```
+1. **Deploy from GitHub** - Connect `boomerfreak1/mcc-recall-app` in Railway
+2. **Add a volume** - Mount path: `/data` (stores SQLite + ChromaDB data)
+3. **Set environment variables** - `GITHUB_TOKEN`, `GITHUB_REPO`, `ADMIN_PASSWORD`
+4. **Deploy** - Railway builds the Docker image with Ollama + ChromaDB bundled
+5. **Index** - Open the app, enter the admin password, and click "Index New Files"
+6. **Set up webhook** (optional) - Point GitHub push events to `https://<domain>/api/webhooks/github` with your `GITHUB_WEBHOOK_SECRET`
 
 ## Supported Document Formats
 
@@ -146,8 +68,35 @@ start.sh                # Startup script: launches Ollama, ChromaDB, then Next.j
 | .docx  | mammoth | Headings (H1-H6) |
 | .xlsx/.xls | SheetJS | Sheets, header rows |
 | .csv   | papaparse | Header columns |
-| .md    | Regex | ATX headings (# - ######) |
+| .md    | remark | ATX headings (# - ######) |
 | .pdf   | pdf-parse | Pages, heuristic headings |
+
+## Project Structure
+
+```
+app/                    # Next.js App Router routes
+  api/
+    ask/                # POST /api/ask - RAG question answering (streamed)
+    health/             # GET /api/health - service health checks
+    index/              # POST /api/index - trigger indexing pipeline
+    gaps/               # Gap CRUD endpoints
+    risks/              # Risk radar endpoints
+    webhooks/github/    # Verified push event handler
+  chat/                 # Chat UI
+  gaps/                 # Gap tracker UI
+lib/
+  indexing/             # SHA-based pipeline + structure-aware chunker
+  ai/                   # Entity extractor, query classifier, 4-strategy retriever
+  parsers/              # 5 format-specific document parsers
+  embeddings/           # Ollama embedding client
+  storage/              # SQLite (db.ts) + ChromaDB (vectorstore.ts)
+  github/               # GitHub API client
+  gaps/                 # Excel gap tracker import
+  risk/                 # 6-rule risk detector + 4-factor health scoring
+Dockerfile              # Single-container build (Node.js + Ollama + ChromaDB)
+start.sh                # Startup: launches Ollama, ChromaDB, waits for health, then Next.js
+railway.toml            # Railway deployment configuration
+```
 
 ## Health Check
 
@@ -162,14 +111,35 @@ start.sh                # Startup script: launches Ollama, ChromaDB, then Next.j
     "sqlite": true,
     "chromadb": true,
     "github": true,
-    "anthropic": true
+    "chatModel": true
   },
-  "details": { ... },
   "index": {
-    "documents": 25,
-    "chunks": 600,
-    "totalTokens": 150000,
-    "vectorCount": 600
+    "documents": 33,
+    "chunks": 1847,
+    "totalTokens": 450000,
+    "vectorCount": 1847
   }
 }
+```
+
+## Local Development
+
+```bash
+# Prerequisites: Node.js 18+, Ollama, ChromaDB
+
+# 1. Start Ollama and pull models
+ollama serve
+ollama pull nomic-embed-text
+ollama pull llama3.2:1b
+
+# 2. Start ChromaDB
+pip install chromadb
+chroma run --path ./data/chroma
+
+# 3. Install and run
+git clone https://github.com/boomerfreak1/mcc-recall-app.git
+cd mcc-recall-app
+npm install
+cp .env.example .env  # Edit with your values, set DATA_DIR=./data
+npm run dev
 ```
