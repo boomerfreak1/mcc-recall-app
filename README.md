@@ -38,15 +38,15 @@ GitHub Docs -> Parse (5 formats) -> Chunk (structure-aware, 512 tokens)
 
 **Environment variables:**
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `GITHUB_TOKEN` | Yes | GitHub personal access token with repo scope |
-| `GITHUB_REPO` | Yes | Repository to index (owner/repo format) |
-| `ADMIN_PASSWORD` | Yes | Password for triggering indexing from the dashboard |
-| `GITHUB_WEBHOOK_SECRET` | Recommended | Secret for verifying GitHub webhook signatures |
-| `MISTRAL_API_KEY` | No | Mistral API key for cloud-based extraction (falls back to local Ollama) |
-| `DATA_DIR` | No | Persistent data directory (default: `/data`) |
-| `PORT` | No | Server port (default: `3000`) |
+| Variable | Required | Prompted at Deploy | Description |
+|----------|----------|-------------------|-------------|
+| `ADMIN_PASSWORD` | Yes | Yes | Password for triggering indexing from the dashboard |
+| `GITHUB_TOKEN` | Yes | Yes | GitHub personal access token with `repo` scope |
+| `GITHUB_REPO` | Yes | Yes | Repository to index (`owner/repo` format) |
+| `GITHUB_WEBHOOK_SECRET` | No | Yes | Secret for verifying GitHub webhook signatures |
+| `MISTRAL_API_KEY` | No | Yes | Mistral API key for cloud-based extraction (falls back to local Ollama) |
+| `DATA_DIR` | No | No | Persistent data directory (default: `/data`) |
+| `PORT` | No | No | Server port (default: `3000`) |
 
 ### Why Deploy Recall on Railway?
 
@@ -54,9 +54,14 @@ Railway's persistent volumes, single-container Docker support, and automatic hea
 
 ## Quick Start
 
-1. **Deploy from GitHub** - Connect `boomerfreak1/mcc-recall-app` in Railway
-2. **Add a volume** - Mount path: `/data` (stores SQLite + ChromaDB data)
-3. **Set environment variables** - `GITHUB_TOKEN`, `GITHUB_REPO`, `ADMIN_PASSWORD`
+1. **Deploy from template** - Click the Railway deploy button or connect your fork in Railway
+2. **Fill in the setup form** - Railway prompts for the required variables:
+   - `ADMIN_PASSWORD` — password for triggering indexing from the dashboard
+   - `GITHUB_TOKEN` — GitHub personal access token with `repo` scope ([generate one](https://github.com/settings/tokens))
+   - `GITHUB_REPO` — repository to index in `owner/repo` format
+   - `GITHUB_WEBHOOK_SECRET` (optional) — for verifying GitHub push webhooks
+   - `MISTRAL_API_KEY` (optional) — for faster cloud-based entity extraction
+3. **Add a volume** - Mount path: `/data` (stores SQLite + ChromaDB data)
 4. **Deploy** - Railway builds the Docker image with Ollama + ChromaDB bundled
 5. **Index** - Open the app, enter the admin password, and click "Index New Files"
 6. **Set up webhook** (optional) - Point GitHub push events to `https://<domain>/api/webhooks/github` with your `GITHUB_WEBHOOK_SECRET`

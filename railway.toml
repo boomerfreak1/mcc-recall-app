@@ -7,3 +7,24 @@ healthcheckTimeout = 120
 startCommand = "/app/start.sh"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
+
+# --- Template variables (shown to user at deploy time) ---
+
+[variables]
+# Required — prompted at deploy
+ADMIN_PASSWORD = { description = "Password for triggering indexing from the dashboard. Generate a strong random value.", required = true }
+GITHUB_TOKEN = { description = "GitHub personal access token with repo scope. Generate at https://github.com/settings/tokens", required = true }
+GITHUB_REPO = { description = "GitHub repository to index in owner/repo format (e.g. myorg/my-docs-repo)", required = true }
+
+# Optional — prompted at deploy
+GITHUB_WEBHOOK_SECRET = { description = "Secret for verifying GitHub webhook signatures. Generate with: openssl rand -hex 32. Leave blank to skip webhook verification.", required = false }
+MISTRAL_API_KEY = { description = "Mistral API key for cloud-based entity extraction (faster/better). Falls back to local Ollama if unset.", required = false }
+
+# Pre-filled defaults (not prompted, but overridable)
+PORT = { default = "3000" }
+DATA_DIR = { default = "/data" }
+OLLAMA_BASE_URL = { default = "http://localhost:11434" }
+OLLAMA_CHAT_MODEL = { default = "llama3.2:1b" }
+EMBEDDING_PROVIDER = { default = "ollama" }
+CHROMA_HOST = { default = "localhost" }
+CHROMA_PORT = { default = "8000" }
